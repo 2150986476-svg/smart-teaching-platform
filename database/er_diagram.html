@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI智能教学平台 - 数据库ER图</title>
+<style>
+  :root { color-scheme: light; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #f0f4f8; color: #1e293b; padding: 40px; }
+  .container { max-width: 1280px; margin: 0 auto; }
+  h1 { font-size: 28px; margin-bottom: 8px; color: #1a5f7a; }
+  .subtitle { font-size: 15px; color: #64748b; margin-bottom: 32px; }
+  .mermaid-wrapper { background: #fff; border-radius: 12px; padding: 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow-x: auto; min-height: 600px; }
+  .legend { display: flex; gap: 32px; flex-wrap: wrap; background: #fff; border-radius: 12px; padding: 20px 32px; margin: 24px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #475569; }
+  .legend-dot { width: 14px; height: 14px; border-radius: 4px; }
+  .legend-dot.primary { background: #1a5f7a; }
+  .legend-dot.secondary { background: #22a699; }
+  .legend-dot.tertiary { background: #f2be22; }
+  .legend-dot.accent { background: #e85d75; }
+  .table-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 24px; }
+  .table-card { background: #fff; border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border-left: 4px solid #1a5f7a; }
+  .table-card h3 { font-size: 15px; color: #1a5f7a; margin-bottom: 4px; }
+  .table-card p { font-size: 13px; color: #64748b; }
+  .section-title { font-size: 18px; margin: 40px 0 16px; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>AI 智能教学平台 — 数据库 ER 图</h1>
+  <p class="subtitle">MySQL 8.0+ | 共 16 张表 | 字符集 utf8mb4</p>
+  <div class="legend">
+    <span class="legend-item"><span class="legend-dot primary"></span> 核心业务表</span>
+    <span class="legend-item"><span class="legend-dot secondary"></span> 学习活动表</span>
+    <span class="legend-item"><span class="legend-dot tertiary"></span> 分析统计表</span>
+    <span class="legend-item"><span class="legend-dot accent"></span> 配置辅助表</span>
+  </div>
+  <div class="mermaid-wrapper">
+    <pre class="mermaid">
+erDiagram
+    sys_user ||--o{ course : "teacher_id"
+    sys_user ||--o{ course_enrollment : "student_id"
+    course ||--o{ course_enrollment : "contains"
+    course ||--o{ course_material : "has"
+    course ||--|| coze_knowledge_base : "has"
+    course ||--|| ai_assistant_bind : "has"
+    course ||--o{ knowledge_point : "contains"
+    sys_user ||--o{ chat_session : "student"
+    course ||--o{ chat_session : "course"
+    chat_session ||--o{ chat_record : "contains"
+    sys_user ||--o{ quiz_batch : "student"
+    course ||--o{ quiz_batch : "course"
+    quiz_batch ||--o{ quiz_record : "contains"
+    sys_user ||--o{ wrong_question_book : "student"
+    course ||--o{ wrong_question_book : "course"
+    quiz_record ||--o{ wrong_question_book : "source"
+    sys_user ||--o{ ability_assessment : "student"
+    course ||--o{ ability_assessment : "course"
+    ability_dimension ||--o{ ability_assessment : "dimension"
+    sys_user ||--o{ leaderboard : "student"
+    course ||--o{ leaderboard : "course"
+    sys_user {
+        bigint id PK
+        varchar username UK
+        varchar password
+        varchar real_name
+        enum role
+        varchar email
+        varchar phone
+        varchar avatar
+        tinyint gender
+        varchar department
+        varchar class_name
+        tinyint status
+        tinyint first_login
+        datetime last_login_at
+        datetime created_at
+        datetime updated_at
+    }
+    course {
+        bigint id PK
+        bigint teacher_id FK
+        varchar name
+        text description
+        varchar cover_image
+        varchar semester
+        tinyint status
+        varchar class_info
+        tinyint is_deleted
+        datetime created_at
+        datetime updated_at
+    }
+    course_enrollment {
+        bigint id PK
+        bigint course_id FK
+        bigint student_id FK
+        datetime enrolled_at
+        tinyint is_active
+    }
+    course_material {
+        bigint id PK
+        bigint course_id FK
+        varchar file_name
+        varchar file_type
+        bigint file_size
+        varchar file_url
+        varchar file_md5
+        varchar coze_doc_id
+        enum parse_status
+        varchar parse_message
+        int page_count
+        datetime created_at
+    }
+    coze_knowledge_base {
+        bigint id PK
+        bigint course_id FK UK
+        varchar coze_dataset_id
+        varchar coze_dataset_name
+        enum status
+        varchar fail_reason
+        int chunk_size
+        datetime synced_at
+    }
+    ai_assistant_bind {
+        bigint id PK
+        bigint course_id FK UK
+        varchar coze_bot_id
+        varchar assistant_name
+        varchar assistant_avatar
+        varchar welcome_message
+        text system_prompt
+        decimal temperature
+        int max_tokens
+        tinyint is_active
+    }
+    knowledge_point {
+        bigint id PK
+        bigint course_id FK
+        bigint parent_id FK
+        varchar name
+        text description
+        decimal weight
+        int sort_order
+        int level
+    }
+    chat_session {
+        bigint id PK
+        varchar session_id UK
+        bigint course_id FK
+        bigint student_id FK
+        varchar title
+        int message_count
+        tinyint is_deleted
+        datetime created_at
+        datetime updated_at
+    }
+    chat_record {
+        bigint id PK
+        varchar session_id FK
+        bigint course_id FK
+        bigint student_id FK
+        enum role
+        text content
+        json metadata
+        int token_count
+        tinyint rating
+        datetime created_at
+    }
+    quiz_batch {
+        bigint id PK
+        varchar batch_id UK
+        bigint course_id FK
+        bigint student_id FK
+        enum difficulty
+        int question_count
+        int correct_count
+        int total_time_spent
+        decimal score
+        enum status
+        datetime completed_at
+    }
+    quiz_record {
+        bigint id PK
+        varchar batch_id FK
+        bigint course_id FK
+        bigint student_id FK
+        int question_index
+        json question_content
+        varchar student_answer
+        varchar correct_answer
+        tinyint is_correct
+        tinyint is_flagged
+        int time_spent
+        enum difficulty
+        json knowledge_points
+        text explanation
+        datetime created_at
+    }
+    wrong_question_book {
+        bigint id PK
+        bigint student_id FK
+        bigint course_id FK
+        bigint quiz_record_id FK
+        json question_content
+        varchar correct_answer
+        varchar student_answer
+        enum difficulty
+        json knowledge_points
+        int wrong_count
+        datetime last_wrong_at
+        tinyint mastered
+        datetime mastered_at
+        datetime created_at
+    }
+    ability_dimension {
+        bigint id PK
+        varchar code UK
+        varchar name
+        text description
+        varchar icon
+        int sort_order
+        tinyint is_active
+    }
+    ability_assessment {
+        bigint id PK
+        bigint student_id FK
+        bigint course_id FK
+        varchar dimension_code FK
+        decimal score
+        date assess_date
+        enum source
+        datetime created_at
+    }
+    leaderboard {
+        bigint id PK
+        bigint course_id FK
+        bigint student_id FK
+        int total_quiz_count
+        int total_questions
+        int correct_count
+        decimal correct_rate
+        int total_chat_count
+        decimal total_study_hours
+        decimal knowledge_coverage
+        decimal average_score
+        decimal composite_score
+        decimal rank_score
+        int rank_position
+        int rank_change
+        date stat_date
+        datetime updated_at
+    }
+    system_config {
+        bigint id PK
+        varchar config_key UK
+        text config_value
+        varchar description
+        datetime updated_at
+    }
+    </pre>
+  </div>
+  <h2 class="section-title">数据表一览</h2>
+  <div class="table-list">
+    <div class="table-card" style="border-left-color:#1a5f7a"><h3>sys_user</h3><p>用户表 — 教师/学生/助教/管理员</p></div>
+    <div class="table-card" style="border-left-color:#1a5f7a"><h3>course</h3><p>课程表 — 课程基本信息</p></div>
+    <div class="table-card" style="border-left-color:#1a5f7a"><h3>course_enrollment</h3><p>选课表 — 学生与课程多对多关联</p></div>
+    <div class="table-card" style="border-left-color:#1a5f7a"><h3>course_material</h3><p>课程资料表 — 上传的文件信息</p></div>
+    <div class="table-card" style="border-left-color:#1a5f7a"><h3>coze_knowledge_base</h3><p>Coze知识库绑定表 — 课程↔知识库</p></div>
+    <div class="table-card" style="border-left-color:#1a5f7a"><h3>ai_assistant_bind</h3><p>AI助教绑定表 — 课程↔Coze Bot</p></div>
+    <div class="table-card" style="border-left-color:#1a5f7a"><h3>knowledge_point</h3><p>知识点表 — 课程树形知识结构</p></div>
+    <div class="table-card" style="border-left-color:#22a699"><h3>chat_session</h3><p>对话会话表 — 问答会话分组</p></div>
+    <div class="table-card" style="border-left-color:#22a699"><h3>chat_record</h3><p>对话记录表 — AI问答逐条记录</p></div>
+    <div class="table-card" style="border-left-color:#22a699"><h3>quiz_batch</h3><p>答题批次表 — 每次答题为一组</p></div>
+    <div class="table-card" style="border-left-color:#22a699"><h3>quiz_record</h3><p>答题记录表 — 每道题作答明细</p></div>
+    <div class="table-card" style="border-left-color:#22a699"><h3>wrong_question_book</h3><p>错题本表 — 错题自动收集</p></div>
+    <div class="table-card" style="border-left-color:#f2be22"><h3>ability_dimension</h3><p>能力维度配置表 — 雷达图维度</p></div>
+    <div class="table-card" style="border-left-color:#f2be22"><h3>ability_assessment</h3><p>能力评估表 — 评分历史</p></div>
+    <div class="table-card" style="border-left-color:#f2be22"><h3>leaderboard</h3><p>排行榜表 — 课程排名快照</p></div>
+    <div class="table-card" style="border-left-color:#e85d75"><h3>system_config</h3><p>系统配置表 — 全局参数</p></div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
+<script>mermaid.initialize({startOnLoad:true,securityLevel:'strict',theme:'base',themeVariables:{primaryColor:'#1a5f7a',primaryBorderColor:'#1a5f7a',lineColor:'#94a3b8',secondaryColor:'#f0f9ff',tertiaryColor:'#f8fafc',fontSize:'13px',fontFamily:'Microsoft YaHei, sans-serif'},er:{diagramPadding:20,layoutDirection:'TB',minEntityWidth:120,minEntityHeight:60,entityPadding:12,stroke:'#cbd5e1',fill:'#ffffff'}});</script>
+</body>
+</html>
