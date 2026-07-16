@@ -451,8 +451,7 @@ watch(currentQuestionIndex, () => {
 <style lang="scss" scoped>
 .quiz-page {
   max-width: 800px;
-  margin: 20px auto;
-  padding: 0 16px;
+  margin: 0 auto;
 }
 
 // ===== 配置页面 =====

@@ -16,60 +16,85 @@ const routes = [
     component: () => import('@/views/login/StudentLogin.vue'),
     meta: { guest: true }
   },
-  // 修改密码（需登录）
+  // 修改密码（独立页面，全屏居中，首次登录强制跳转此页）
   {
     path: '/change-password',
     name: 'ChangePassword',
     component: () => import('@/views/ChangePassword.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, allowFirstLogin: true }
   },
-  // 教师后台 - 课程管理
-  {
-    path: '/dashboard',
-    name: 'Dashboard',
-    redirect: '/dashboard/courses'
-  },
-  {
-    path: '/dashboard/courses',
-    name: 'CourseManage',
-    component: () => import('@/views/teacher/CourseManage.vue'),
-    meta: { requiresAuth: true, roles: ['teacher', 'admin'] }
-  },
-  {
-    path: '/dashboard/students',
-    name: 'StudentManage',
-    component: () => import('@/views/teacher/StudentManage.vue'),
-    meta: { requiresAuth: true, roles: ['teacher', 'admin'] }
-  },
-  {
-    path: '/dashboard/materials',
-    name: 'MaterialManage',
-    component: () => import('@/views/teacher/MaterialManage.vue'),
-    meta: { requiresAuth: true, roles: ['teacher', 'admin'] }
-  },
-  // 学生端
+
+  // ======================== 学生端布局 ========================
   {
     path: '/student',
-    redirect: '/student/courses'
+    component: () => import('@/views/student/StudentLayout.vue'),
+    meta: { requiresAuth: true, roles: ['student'] },
+    children: [
+      {
+        path: '',
+        redirect: '/student/courses'
+      },
+      {
+        path: 'courses',
+        name: 'StudentDashboard',
+        component: () => import('@/views/student/StudentDashboard.vue')
+      },
+      {
+        path: 'chat',
+        name: 'ChatPage',
+        component: () => import('@/views/student/ChatPage.vue')
+      },
+      {
+        path: 'quiz',
+        name: 'QuizPage',
+        component: () => import('@/views/student/QuizPage.vue')
+      },
+      {
+        path: 'analysis',
+        name: 'AnalysisPage',
+        component: () => import('@/views/student/AnalysisPage.vue')
+      }
+    ]
   },
+
+  // ======================== 教师端布局 ========================
   {
-    path: '/student/chat',
-    name: 'ChatPage',
-    component: () => import('@/views/student/ChatPage.vue'),
-    meta: { requiresAuth: true, roles: ['student'] }
+    path: '/dashboard',
+    component: () => import('@/views/teacher/TeacherLayout.vue'),
+    meta: { requiresAuth: true, roles: ['teacher', 'admin'] },
+    children: [
+      {
+        path: '',
+        redirect: '/dashboard/courses'
+      },
+      {
+        path: 'courses',
+        name: 'CourseManage',
+        component: () => import('@/views/teacher/CourseManage.vue')
+      },
+      {
+        path: 'students',
+        name: 'StudentManage',
+        component: () => import('@/views/teacher/StudentManage.vue')
+      },
+      {
+        path: 'materials',
+        name: 'MaterialManage',
+        component: () => import('@/views/teacher/MaterialManage.vue')
+      },
+      {
+        path: 'analysis',
+        name: 'TeacherAnalysis',
+        component: () => import('@/views/teacher/TeacherAnalysis.vue')
+      },
+      {
+        path: 'logs',
+        name: 'OperationLog',
+        component: () => import('@/views/teacher/OperationLog.vue')
+      }
+    ]
   },
-  {
-    path: '/student/quiz',
-    name: 'QuizPage',
-    component: () => import('@/views/student/QuizPage.vue'),
-    meta: { requiresAuth: true, roles: ['student'] }
-  },
-  {
-    path: '/student/analysis',
-    name: 'AnalysisPage',
-    component: () => import('@/views/student/AnalysisPage.vue'),
-    meta: { requiresAuth: true, roles: ['student'] }
-  },
+
   // 默认重定向到登录页
   {
     path: '/',
@@ -93,6 +118,14 @@ router.beforeEach((to, from, next) => {
       next('/login')
       return
     }
+
+    // 首次登录强制改密（学生角色，且 firstLogin 为 true）
+    const isStudent = user?.role === 'student'
+    if (isStudent && user?.firstLogin && !to.meta.allowFirstLogin) {
+      next('/change-password')
+      return
+    }
+
     // 角色校验
     if (to.meta.roles && Array.isArray(to.meta.roles)) {
       if (!user || !to.meta.roles.includes(user.role)) {
@@ -106,7 +139,12 @@ router.beforeEach((to, from, next) => {
   else if (to.meta.guest) {
     if (token && user) {
       if (user.role === 'student') {
-        next('/student/chat')
+        // 首次登录强制改密
+        if (user.firstLogin) {
+          next('/change-password')
+          return
+        }
+        next('/student/courses')
       } else {
         next('/dashboard/courses')
       }

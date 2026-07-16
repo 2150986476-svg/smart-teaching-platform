@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs')
 const pool = require('../config/db')
+const { writeLog } = require('./log.controller')
 
 /**
  * 修改密码（需旧密码验证）
@@ -78,6 +79,19 @@ const changePassword = async (req, res, next) => {
       'UPDATE sys_user SET password = ?, first_login = 0 WHERE id = ?',
       [hashedPassword, id]
     )
+
+    // 记录操作日志
+    await writeLog({
+      operator_id: req.user.id,
+      operator_name: req.user.realName,
+      operator_role: req.user.role,
+      action: 'change_password',
+      target_type: 'user',
+      target_id: parseInt(id),
+      target_name: user.username,
+      detail: '自行修改登录密码',
+      ip_address: req.ip
+    })
 
     res.json({
       code: 200,

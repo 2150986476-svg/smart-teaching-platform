@@ -1,6 +1,14 @@
 import request from './request'
 
 /**
+ * 学生获取自己已选课程列表
+ * @returns {Promise}
+ */
+export function getMyCourses() {
+  return request.get('/student/courses')
+}
+
+/**
  * 获取课程学生列表（分页）
  * @param {number} courseId 课程ID
  * @param {Object} params - { page, pageSize, keyword }

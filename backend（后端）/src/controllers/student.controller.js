@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs')
 const XLSX = require('xlsx')
 const pool = require('../config/db')
+const { writeLog } = require('./log.controller')
 
 /**
  * 获取课程学生列表（分页）
@@ -356,6 +357,19 @@ const importStudents = async (req, res, next) => {
 
     await connection.commit()
 
+    // 记录操作日志
+    await writeLog({
+      operator_id: req.user.id,
+      operator_name: req.user.realName,
+      operator_role: req.user.role,
+      action: 'import_students',
+      target_type: 'course',
+      target_id: parseInt(courseId),
+      target_name: `课程ID:${courseId}`,
+      detail: `批量导入 ${successCount} 名学生（新增账号 ${newAccounts} 人，失败 ${failCount} 条）`,
+      ip_address: req.ip
+    })
+
     res.json({
       code: 200,
       data: { totalRows, successCount, newAccounts, failCount, failDetails }
@@ -408,7 +422,7 @@ const resetStudentPassword = async (req, res, next) => {
 
     // 查询学生
     const [userRows] = await pool.query(
-      'SELECT id, role FROM sys_user WHERE id = ?',
+      'SELECT id, username, role FROM sys_user WHERE id = ?',
       [id]
     )
     if (userRows.length === 0) {
@@ -432,6 +446,19 @@ const resetStudentPassword = async (req, res, next) => {
       'UPDATE sys_user SET password = ?, first_login = 1 WHERE id = ?',
       [hashedPassword, id]
     )
+
+    // 记录操作日志
+    await writeLog({
+      operator_id: req.user.id,
+      operator_name: req.user.realName,
+      operator_role: req.user.role,
+      action: 'reset_password',
+      target_type: 'student',
+      target_id: parseInt(id),
+      target_name: userRows[0].username,
+      detail: `重置学生密码为默认密码`,
+      ip_address: req.ip
+    })
 
     res.json({
       code: 200,
@@ -457,7 +484,7 @@ const updateStudentClass = async (req, res, next) => {
     }
 
     const [userRows] = await pool.query(
-      'SELECT id, role FROM sys_user WHERE id = ?',
+      'SELECT id, username, role FROM sys_user WHERE id = ?',
       [id]
     )
     if (userRows.length === 0) {
@@ -471,6 +498,19 @@ const updateStudentClass = async (req, res, next) => {
       'UPDATE sys_user SET class_name = ? WHERE id = ?',
       [className, id]
     )
+
+    // 记录操作日志
+    await writeLog({
+      operator_id: req.user.id,
+      operator_name: req.user.realName,
+      operator_role: req.user.role,
+      action: 'update_class',
+      target_type: 'student',
+      target_id: parseInt(id),
+      target_name: userRows[0].username,
+      detail: `更新班级信息为: ${className || '(空)'}`,
+      ip_address: req.ip
+    })
 
     res.json({ code: 200, message: '班级信息更新成功' })
   } catch (err) {

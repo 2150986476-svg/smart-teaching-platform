@@ -33,4 +33,7 @@ router.use('/', require('./material.routes'))
 // AI知识库同步模块（同步课程资料到Coze知识库）
 router.use('/', require('./knowledge.routes'))
 
+// 操作日志模块（教师查看修改记录）
+router.use('/', require('./log.routes'))
+
 module.exports = router

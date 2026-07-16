@@ -363,7 +363,6 @@ onMounted(() => {
 .chat-page {
   display: flex;
   height: calc(100vh - 40px);
-  margin: 20px;
   background: #fff;
   border-radius: 8px;
   overflow: hidden;

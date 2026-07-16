@@ -3,11 +3,13 @@ const router = express.Router()
 const analysisController = require('../controllers/analysis.controller')
 const { authenticate, authorize } = require('../middleware/auth')
 
-// 所有分析接口需要认证 + 学生角色
+// 所有分析接口需要认证
 router.use(authenticate)
-router.use(authorize('student'))
 
-// 获取学生能力分析（雷达图 + 概览 + 知识点 + 活跃趋势）
-router.get('/student/analysis', analysisController.getStudentAnalysis)
+// 学生：获取自身能力分析
+router.get('/student/analysis', authorize('student'), analysisController.getStudentAnalysis)
+
+// 教师/管理员：查看指定学生的能力分析
+router.get('/teacher/student-analysis', authorize('teacher', 'admin'), analysisController.getStudentAnalysisForTeacher)
 
 module.exports = router

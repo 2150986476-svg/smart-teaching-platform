@@ -86,7 +86,7 @@ function getLevel(score) {
 }
 
 /**
- * 获取学生能力分析
+ * 获取学生能力分析（学生自查看）
  * GET /api/student/analysis?courseId=1
  */
 const getStudentAnalysis = async (req, res, next) => {
@@ -109,7 +109,64 @@ const getStudentAnalysis = async (req, res, next) => {
       return res.status(403).json({ code: 403, message: '学生未选课' })
     }
 
-    // === 聚合答题数据 ===
+    // 委托给核心分析函数
+    await getStudentAnalysisCore(req, res, next)
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * 教师/管理员查看指定学生的能力分析
+ * GET /api/teacher/student-analysis?courseId=1&studentId=10
+ */
+const getStudentAnalysisForTeacher = async (req, res, next) => {
+  try {
+    const { courseId, studentId } = req.query
+
+    if (!courseId || !studentId) {
+      return res.status(400).json({ code: 400, message: '课程ID和学生ID不能为空' })
+    }
+
+    // 校验课程权限
+    const [courseRows] = await pool.query(
+      'SELECT id, teacher_id FROM course WHERE id = ? AND is_deleted = 0',
+      [courseId]
+    )
+    if (courseRows.length === 0) {
+      return res.status(404).json({ code: 2001, message: '课程不存在' })
+    }
+    if (req.user.role === 'teacher' && courseRows[0].teacher_id !== req.user.id) {
+      return res.status(403).json({ code: 403, message: '无权查看此课程的学生数据' })
+    }
+
+    // 校验学生已选课
+    const [enr] = await pool.query(
+      `SELECT ce.id FROM course_enrollment ce
+       WHERE ce.course_id = ? AND ce.student_id = ? AND ce.is_active = 1`,
+      [courseId, studentId]
+    )
+    if (enr.length === 0) {
+      return res.status(404).json({ code: 404, message: '该学生未选修此课程' })
+    }
+
+    // 委托给核心分析函数
+    req.user.id = parseInt(studentId)
+    await getStudentAnalysisCore(req, res, next)
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * 核心分析计算（供学生自查看和教师查看复用）
+ */
+async function getStudentAnalysisCore(req, res, next) {
+  try {
+    const studentId = req.user.id
+    const { courseId } = req.query
+
+    // === 聚合答题数据 === (same as getStudentAnalysis)
     const [quizStats] = await pool.query(
       `SELECT
         COUNT(*) AS totalRecords,
@@ -120,7 +177,6 @@ const getStudentAnalysis = async (req, res, next) => {
       [courseId, studentId]
     )
 
-    // 按难度统计
     const [difficultyStats] = await pool.query(
       `SELECT
         difficulty,
@@ -132,7 +188,6 @@ const getStudentAnalysis = async (req, res, next) => {
       [courseId, studentId]
     )
 
-    // 按知识点统计
     const [kpRows] = await pool.query(
       `SELECT
         knowledge_points AS knowledgePoints
@@ -141,7 +196,6 @@ const getStudentAnalysis = async (req, res, next) => {
       [courseId, studentId]
     )
 
-    // 平均用时
     const [timeStats] = await pool.query(
       `SELECT AVG(time_spent) AS avgTime, COUNT(*) AS cnt
        FROM quiz_record
@@ -149,7 +203,6 @@ const getStudentAnalysis = async (req, res, next) => {
       [courseId, studentId]
     )
 
-    // 用时分布
     const [timeDist] = await pool.query(
       `SELECT
         SUM(CASE WHEN time_spent <= 30 THEN 1 ELSE 0 END) AS under30s,
@@ -160,7 +213,6 @@ const getStudentAnalysis = async (req, res, next) => {
       [courseId, studentId]
     )
 
-    // === 聚合对话数据 ===
     const [chatStats] = await pool.query(
       `SELECT
         COUNT(DISTINCT session_id) AS totalSessions,
@@ -173,19 +225,16 @@ const getStudentAnalysis = async (req, res, next) => {
       [courseId, studentId]
     )
 
-    // 构造结构体
     const quizTotal = quizStats[0].totalRecords || 0
     const quizCorrect = quizStats[0].correctCount || 0
     const totalBatches = quizStats[0].totalBatches || 0
     const correctRate = quizTotal > 0 ? round((quizCorrect / quizTotal) * 100) : 0
 
-    // 难度分解
     const db = { easy: {}, medium: {}, hard: {} }
     difficultyStats.forEach(r => {
       if (db[r.difficulty]) db[r.difficulty] = { total: r.total, correct: r.correct }
     })
 
-    // 知识点聚合
     const kpMap = {}
     kpRows.forEach(r => {
       let points = r.knowledgePoints
@@ -196,10 +245,8 @@ const getStudentAnalysis = async (req, res, next) => {
       points.forEach(kp => {
         if (!kpMap[kp]) kpMap[kp] = { name: kp, total: 0, correct: 0 }
         kpMap[kp].total++
-        // We also need correct counts per knowledge point
       })
     })
-    // Second pass: count correct per knowledge point
     if (Object.keys(kpMap).length > 0) {
       const [kpMarked] = await pool.query(
         `SELECT knowledge_points AS kp, is_correct AS correct
@@ -228,7 +275,6 @@ const getStudentAnalysis = async (req, res, next) => {
     })).sort((a, b) => b.total - a.total)
 
     const avgTime = timeStats[0].avgTime ? Math.round(timeStats[0].avgTime) : 0
-
     const td = timeDist[0] || {}
     const timeDistribution = {
       under30s: td.under30s || 0,
@@ -236,7 +282,6 @@ const getStudentAnalysis = async (req, res, next) => {
       over60s: td.over60s || 0
     }
 
-    // 对话数据
     const cs = chatStats[0] || {}
     const totalSessions = cs.totalSessions || 0
     const totalMessages = cs.totalMessages || 0
@@ -255,7 +300,6 @@ const getStudentAnalysis = async (req, res, next) => {
 
     const dataSufficient = quizTotal >= 5 || totalMessages >= 10
 
-    // 计算5维度评分
     const scores = computeScores({
       knowledgeMastery,
       difficultyBreakdown: db,
@@ -276,11 +320,9 @@ const getStudentAnalysis = async (req, res, next) => {
     )
 
     const overallLevel = getLevel(overallScore)
-
     const strengths = knowledgeMastery.filter(k => k.rate >= 80 && k.total >= 3).map(k => k.name)
     const weaknesses = knowledgeMastery.filter(k => k.rate < 60 && k.total >= 2).map(k => k.name)
 
-    // 构建维度数组
     const dimensions = [
       { code: 'knowledge_breadth',  name: '知识广度',     score: scores.knowledge_breadth,  maxScore: 100 },
       { code: 'depth',              name: '理解深度',     score: scores.depth,              maxScore: 100 },
@@ -289,7 +331,6 @@ const getStudentAnalysis = async (req, res, next) => {
       { code: 'continuous_learning',name: '持续学习',     score: scores.continuous_learning,maxScore: 100 }
     ]
 
-    // 查询班级平均分
     const [classAvg] = await pool.query(
       `SELECT
         SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) AS totalCorrect,
@@ -304,7 +345,6 @@ const getStudentAnalysis = async (req, res, next) => {
     const classCorrectRate = classAvg.length > 0
       ? round((classAvg[0].totalCorrect / classAvg[0].totalQuestions) * 100) : null
 
-    // 活跃趋势（最近14天）
     const [chatTrend] = await pool.query(
       `SELECT
         DATE(created_at) AS date,
@@ -327,7 +367,6 @@ const getStudentAnalysis = async (req, res, next) => {
       [courseId, studentId]
     )
 
-    // 合并趋势
     const trendMap = {}
     const today = new Date()
     for (let i = 13; i >= 0; i--) {
@@ -346,7 +385,6 @@ const getStudentAnalysis = async (req, res, next) => {
     })
     const activityTrend = Object.values(trendMap)
 
-    // 存评估快照到 ability_assessment（upsert）
     const assessDate = new Date().toISOString().split('T')[0]
     const dimCodes = ['knowledge_breadth', 'depth', 'application', 'analysis', 'continuous_learning']
     const dimScores = {
@@ -371,6 +409,7 @@ const getStudentAnalysis = async (req, res, next) => {
       code: 200,
       data: {
         courseId: parseInt(courseId),
+        studentId,
         assessDate,
         dataSufficient,
         overview: {
@@ -399,4 +438,4 @@ const getStudentAnalysis = async (req, res, next) => {
   }
 }
 
-module.exports = { getStudentAnalysis }
+module.exports = { getStudentAnalysis, getStudentAnalysisForTeacher }

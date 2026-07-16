@@ -105,15 +105,16 @@ const handleSubmit = async () => {
 
   loading.value = true
   try {
+    const role = userStore.role
     await userStore.changePassword(userStore.userId, {
       oldPassword: form.oldPassword,
       newPassword: form.newPassword
     })
     ElMessage.success('密码修改成功，请重新登录')
 
-    // 清除登录状态，重新登录
+    // 清除登录状态，跳转到对应角色登录页
     userStore.logout()
-    router.push('/login')
+    router.push(role === 'student' ? '/login/student' : '/login')
   } catch (err) {
     // 错误提示由 axios 拦截器统一处理
   } finally {

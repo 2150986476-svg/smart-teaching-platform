@@ -1,13 +1,18 @@
 <template>
-  <div class="analysis-page">
-    <!-- 课程选择 -->
-    <div class="page-top-bar">
+  <div class="teacher-analysis">
+    <div class="page-header">
+      <h2>📊 学情分析</h2>
+      <p>选择课程和学生，查看详细的能力分析报告</p>
+    </div>
+
+    <!-- 选择器 -->
+    <div class="selector-bar">
       <el-select
         v-model="selectedCourseId"
-        placeholder="选择课程查看能力分析"
-        style="width: 280px"
+        placeholder="选择课程"
+        style="width: 240px"
         filterable
-        @change="fetchAnalysis"
+        @change="onCourseChange"
       >
         <el-option
           v-for="c in courseOptions"
@@ -16,24 +21,40 @@
           :value="c.id"
         />
       </el-select>
+
+      <el-select
+        v-model="selectedStudentId"
+        placeholder="选择学生"
+        style="width: 240px"
+        filterable
+        :disabled="!selectedCourseId"
+        :loading="studentLoading"
+        @change="fetchAnalysis"
+      >
+        <el-option
+          v-for="s in studentOptions"
+          :key="s.id"
+          :label="`${s.realName}（${s.username}）`"
+          :value="s.id"
+        />
+      </el-select>
     </div>
 
     <!-- 加载中 -->
-    <div v-if="loading" class="loading-box">
+    <div v-if="analysisLoading" class="loading-box">
       <el-skeleton :rows="8" animated />
     </div>
 
     <!-- 空态 -->
     <div v-else-if="!analysisData" class="empty-box">
-      <el-empty description="请选择课程查看能力分析" :image-size="100" />
+      <el-empty description="请选择课程和学生查看能力分析" :image-size="100" />
     </div>
 
-    <!-- 数据 -->
+    <!-- 分析数据 -->
     <template v-else>
-      <!-- 数据不足提示 -->
       <el-alert
         v-if="!analysisData.dataSufficient"
-        title="学习数据较少，当前分析结果为保守估计"
+        title="该学生学习数据较少，当前分析结果为保守估计"
         type="warning"
         :closable="false"
         show-icon
@@ -66,14 +87,12 @@
         </div>
       </div>
 
-      <!-- 图表区一：雷达图 + 总评 -->
+      <!-- 雷达图 + 评分明细 -->
       <div class="chart-row">
-        <!-- 雷达图 -->
         <div class="chart-card radar-card">
           <h3>📡 能力雷达图</h3>
           <v-chart :option="radarOption" autoresize style="height: 380px" />
         </div>
-        <!-- 评分明细 -->
         <div class="chart-card score-card">
           <h3>📊 维度评分明细</h3>
           <div class="dimension-list">
@@ -102,7 +121,7 @@
         </div>
       </div>
 
-      <!-- 图表区二：知识点掌握 -->
+      <!-- 知识点掌握 -->
       <div class="chart-card full-width">
         <h3>🎯 知识点掌握度</h3>
         <v-chart v-if="analysisData.knowledgeMastery.length > 0"
@@ -110,7 +129,7 @@
         <el-empty v-else description="暂无知识点答题数据" :image-size="60" />
       </div>
 
-      <!-- 图表区三：活跃趋势 + 优弱势 -->
+      <!-- 活跃趋势 + 强弱项 -->
       <div class="chart-row">
         <div class="chart-card trend-card">
           <h3>📈 学习活跃趋势（近14天）</h3>
@@ -134,7 +153,7 @@
                 {{ w }}
               </el-tag>
             </div>
-            <div v-else class="sw-empty">暂无薄弱的识点</div>
+            <div v-else class="sw-empty">暂无薄弱的知识点</div>
           </div>
         </div>
       </div>
@@ -150,40 +169,61 @@ import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from
 import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 import { getCourses } from '@/api/course'
-import { getStudentAnalysis } from '@/api/analysis'
+import { getStudentsByCourse } from '@/api/student'
+import { getStudentAnalysisByTeacher } from '@/api/analysis'
 
 use([RadarChart, BarChart, LineChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, CanvasRenderer])
 
-// 课程选择
 const selectedCourseId = ref(null)
+const selectedStudentId = ref(null)
 const courseOptions = ref([])
-const loading = ref(false)
+const studentOptions = ref([])
+const studentLoading = ref(false)
+const analysisLoading = ref(false)
 const analysisData = ref(null)
 
 const fetchCourses = async () => {
   try {
-    const res = await getCourses({ pageSize: 100, status: 1 })
+    const res = await getCourses({ pageSize: 100 })
     courseOptions.value = res.data.records
   } catch {}
 }
 
-const fetchAnalysis = async () => {
+const onCourseChange = async () => {
+  selectedStudentId.value = null
+  analysisData.value = null
   if (!selectedCourseId.value) {
+    studentOptions.value = []
+    return
+  }
+  studentLoading.value = true
+  try {
+    const res = await getStudentsByCourse(selectedCourseId.value, { pageSize: 500 })
+    studentOptions.value = res.data.records
+  } catch {} finally {
+    studentLoading.value = false
+  }
+}
+
+const fetchAnalysis = async () => {
+  if (!selectedCourseId.value || !selectedStudentId.value) {
     analysisData.value = null
     return
   }
-  loading.value = true
+  analysisLoading.value = true
   try {
-    const res = await getStudentAnalysis({ courseId: selectedCourseId.value })
+    const res = await getStudentAnalysisByTeacher({
+      courseId: selectedCourseId.value,
+      studentId: selectedStudentId.value
+    })
     analysisData.value = res.data
   } catch {} finally {
-    loading.value = false
+    analysisLoading.value = false
   }
 }
 
 const overview = computed(() => analysisData.value?.overview || {})
 
-// 评分颜色
 const scoreClass = (s) => {
   if (s >= 90) return 'score-great'
   if (s >= 70) return 'score-good'
@@ -203,21 +243,18 @@ const progressColor = (s) => {
   return '#f56c6c'
 }
 
-// === ECharts: 雷达图 ===
 const radarOption = computed(() => {
   const dims = analysisData.value?.dimensions || []
   const indicator = dims.map(d => ({ name: d.name, max: 100 }))
   const studentData = dims.map(d => d.score)
-
   const series = [{
     type: 'radar',
-    data: [{ value: studentData, name: '我的能力', areaStyle: { color: 'rgba(26,95,122,0.2)' } }],
+    data: [{ value: studentData, name: '学生能力', areaStyle: { color: 'rgba(26,95,122,0.2)' } }],
     symbol: 'circle',
     symbolSize: 6,
     lineStyle: { color: '#1A5F7A', width: 2 },
     itemStyle: { color: '#1A5F7A' }
   }]
-
   const classRate = analysisData.value?.classAvgCorrectRate
   if (classRate !== null && classRate !== undefined) {
     const classVal = Math.min(classRate, 95)
@@ -231,10 +268,9 @@ const radarOption = computed(() => {
       areaStyle: { color: 'rgba(144,147,153,0.08)' }
     })
   }
-
   return {
     tooltip: { trigger: 'item' },
-    legend: { bottom: 0, data: ['我的能力', ...(classRate !== null ? ['班级平均'] : [])] },
+    legend: { bottom: 0, data: ['学生能力', ...(classRate !== null ? ['班级平均'] : [])] },
     radar: {
       center: ['50%', '48%'],
       radius: '70%',
@@ -245,7 +281,6 @@ const radarOption = computed(() => {
   }
 })
 
-// === ECharts: 知识点柱状图 ===
 const knowledgeBarOption = computed(() => {
   const mastery = analysisData.value?.knowledgeMastery || []
   const names = mastery.map(m => m.name.length > 8 ? m.name.slice(0, 8) + '...' : m.name)
@@ -284,13 +319,11 @@ const knowledgeBarOption = computed(() => {
   }
 })
 
-// === ECharts: 活跃趋势折线图 ===
 const trendOption = computed(() => {
   const trend = analysisData.value?.activityTrend || []
-  const dates = trend.map(t => t.date.slice(5)) // MM-DD
+  const dates = trend.map(t => t.date.slice(5))
   const chatData = trend.map(t => t.chatCount)
   const quizData = trend.map(t => t.quizCount)
-
   return {
     tooltip: { trigger: 'axis' },
     legend: { bottom: 0, data: ['提问', '答题'] },
@@ -333,17 +366,24 @@ onMounted(fetchCourses)
 </script>
 
 <style lang="scss" scoped>
-.analysis-page {
-  max-width: 1100px;
-  margin: 0 auto;
+.teacher-analysis {
+  padding: 24px 20px;
 }
 
-.page-top-bar {
+.page-header {
+  margin-bottom: 20px;
+  h2 { margin: 0 0 6px; font-size: 22px; color: #303133; }
+  p { margin: 0; color: #909399; font-size: 14px; }
+}
+
+.selector-bar {
   background: #fff;
   border-radius: 8px;
   padding: 16px 20px;
   margin-bottom: 16px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  display: flex;
+  gap: 16px;
 }
 
 .loading-box, .empty-box {
@@ -353,7 +393,6 @@ onMounted(fetchCourses)
   box-shadow: 0 2px 12px rgba(0,0,0,0.06);
 }
 
-// === 概览卡片 ===
 .overview-cards {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -367,23 +406,8 @@ onMounted(fetchCourses)
   padding: 16px 12px;
   text-align: center;
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  transition: transform 0.15s;
-
-  &:hover { transform: translateY(-2px); }
-
-  .ov-number {
-    font-size: 28px;
-    font-weight: 700;
-    color: #303133;
-    line-height: 1.2;
-  }
-
-  .ov-label {
-    font-size: 12px;
-    color: #909399;
-    margin-top: 4px;
-  }
-
+  .ov-number { font-size: 28px; font-weight: 700; color: #303133; line-height: 1.2; }
+  .ov-label { font-size: 12px; color: #909399; margin-top: 4px; }
   &.level-card {
     &.lv-great  { background: #e8f5e9; .ov-number { color: #22A699; } }
     &.lv-good   { background: #e8f0fe; .ov-number { color: #1A5F7A; } }
@@ -392,7 +416,6 @@ onMounted(fetchCourses)
   }
 }
 
-// === 图表行 ===
 .chart-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -405,20 +428,11 @@ onMounted(fetchCourses)
   border-radius: 8px;
   padding: 20px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-
-  h3 {
-    margin: 0 0 12px;
-    font-size: 15px;
-    color: #303133;
-    font-weight: 500;
-  }
+  h3 { margin: 0 0 12px; font-size: 15px; color: #303133; font-weight: 500; }
 }
 
-.full-width {
-  margin-bottom: 16px;
-}
+.full-width { margin-bottom: 16px; }
 
-// === 维度评分 ===
 .dimension-list {
   display: flex;
   flex-direction: column;
@@ -431,7 +445,6 @@ onMounted(fetchCourses)
     justify-content: space-between;
     margin-bottom: 6px;
     font-size: 13px;
-
     .dim-name { color: #606266; }
     .dim-score { font-weight: 600; font-size: 15px; }
   }
@@ -445,42 +458,22 @@ onMounted(fetchCourses)
   margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid #ebeef5;
-
   .overall-label { font-size: 14px; color: #909399; }
   .overall-value { font-size: 36px; font-weight: 700; }
 }
 
-// === 强弱项 ===
 .sw-section {
   margin-bottom: 16px;
-
-  .sw-title {
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 8px;
-    &.strong { color: #22A699; }
-    &.weak   { color: #f56c6c; }
-  }
-
-  .sw-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .sw-empty {
-    color: #c0c4cc;
-    font-size: 13px;
-  }
+  .sw-title { font-size: 14px; font-weight: 500; margin-bottom: 8px; &.strong { color: #22A699; } &.weak { color: #f56c6c; } }
+  .sw-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sw-empty { color: #c0c4cc; font-size: 13px; }
 }
 
-// === 评分颜色 ===
 .score-great  { color: #22A699; }
 .score-good   { color: #1A5F7A; }
 .score-pass   { color: #e6a23c; }
 .score-fail   { color: #f56c6c; }
 
-// === 响应式 ===
 @media (max-width: 768px) {
   .overview-cards { grid-template-columns: repeat(3, 1fr); }
   .chart-row { grid-template-columns: 1fr; }

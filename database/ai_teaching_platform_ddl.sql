@@ -440,5 +440,28 @@ CREATE TABLE course_file (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='课程资料文件表 - 教学资料上传记录';
 
 -- ============================================================
--- 建表完成，共 17 张表
+-- 18. 操作日志表 (operation_log)
+--     记录教师/管理员的关键操作，便于审计追溯
+-- ============================================================
+DROP TABLE IF EXISTS operation_log;
+CREATE TABLE operation_log (
+    id              BIGINT          AUTO_INCREMENT  PRIMARY KEY         COMMENT '主键ID',
+    operator_id     BIGINT          NOT NULL                            COMMENT '操作者ID（关联sys_user）',
+    operator_name   VARCHAR(50)     NOT NULL                            COMMENT '操作者姓名',
+    operator_role   VARCHAR(20)     NOT NULL                            COMMENT '操作者角色',
+    action          VARCHAR(50)     NOT NULL                            COMMENT '操作类型：import_students/reset_password/update_class/create_course/...',
+    target_type     VARCHAR(50)     DEFAULT NULL                        COMMENT '操作目标类型：student/course/material',
+    target_id       BIGINT          DEFAULT NULL                        COMMENT '操作目标ID',
+    target_name     VARCHAR(200)    DEFAULT NULL                        COMMENT '操作目标名称（如学生姓名、课程名）',
+    detail          VARCHAR(1000)   DEFAULT NULL                        COMMENT '操作详情描述',
+    ip_address      VARCHAR(50)     DEFAULT NULL                        COMMENT '操作者IP地址',
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP  COMMENT '操作时间',
+    INDEX idx_operator (operator_id),
+    INDEX idx_action (action),
+    INDEX idx_created_at (created_at),
+    CONSTRAINT fk_log_operator FOREIGN KEY (operator_id) REFERENCES sys_user(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='操作日志表 - 教师/管理员操作审计记录';
+
+-- ============================================================
+-- 建表完成，共 18 张表
 -- ============================================================
