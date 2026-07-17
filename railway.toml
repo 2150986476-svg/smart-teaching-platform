@@ -1,9 +1,6 @@
 # Railway 部署配置
 # 文档: https://docs.railway.com/reference/config-as-code
 
-[build]
-builder = "docker"
-
 [deploy]
 startCommand = "bash /app/start-cloudflare.sh"
 healthcheckPath = "/api/health"
