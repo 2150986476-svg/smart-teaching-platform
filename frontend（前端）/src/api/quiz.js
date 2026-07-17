@@ -1,35 +1,13 @@
 import request from './request'
 
-/**
- * 生成习题（从 JSON 题库）
- * @param {Object} data - { courseId, difficulty?, count? }
- * @returns {Promise} { batchId, questions, difficulty, createdAt }
- */
-export function generateQuiz(data) {
-  return request.post('/student/quiz/generate', data)
-}
+export const generateQuiz = (data) => request.post('/student/quiz/generate', data)
+export const submitQuiz = (data) => request.post('/student/quiz/submit', data)
+export const getQuizBatches = (params) => request.get('/student/quiz/batches', { params })
+export const getQuizBatchDetail = (batchId) => request.get(`/student/quiz/batches/${batchId}`)
 
-/**
- * 提交答案并批改
- * @param {Object} data - { batchId, answers: [{index, answer, timeSpent}] }
- * @returns {Promise} { batchId, score, correctCount, totalCount, totalTimeSpent, results, completedAt }
- */
-export function submitQuiz(data) {
-  return request.post('/student/quiz/submit', data)
-}
-
-/**
- * 获取历史答题批次列表
- * @param {Object} params - { courseId?, page?, pageSize? }
- */
-export function getQuizBatches(params) {
-  return request.get('/student/quiz/batches', { params })
-}
-
-/**
- * 获取某批次答题详情
- * @param {string} batchId
- */
-export function getQuizBatchDetail(batchId) {
-  return request.get(`/student/quiz/batches/${batchId}`)
-}
+export const getWrongQuestions = (params) => request.get('/student/wrong-questions', { params })
+export const markWrongMastered = (id) => request.post(`/student/wrong-questions/${id}/master`)
+export const practiceWrongQuestions = (data) => request.post('/student/wrong-questions/practice', data)
+export const getLeaderboard = (params) => request.get('/student/leaderboard', { params })
+export const getClassAnalytics = (params) => request.get('/teacher/class-analytics', { params })
+export const getAchievements = (params) => request.get('/student/achievements', { params })

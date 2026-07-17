@@ -24,6 +24,14 @@
           <span class="nav-icon">📊</span>
           <span>能力分析</span>
         </router-link>
+        <router-link to="/student/wrong-questions" class="nav-item" :class="{ active: $route.path === '/student/wrong-questions' }">
+          <span class="nav-icon">📕</span>
+          <span>错题本</span>
+        </router-link>
+        <router-link to="/student/leaderboard" class="nav-item" :class="{ active: $route.path === '/student/leaderboard' }">
+          <span class="nav-icon">🏆</span>
+          <span>排行榜</span>
+        </router-link>
       </nav>
 
       <div class="sidebar-footer">

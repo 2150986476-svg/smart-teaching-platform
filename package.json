@@ -1,0 +1,13 @@
+{
+  "name": "smart-teaching-platform",
+  "version": "1.0.0",
+  "description": "AI智能教学平台 — 全栈部署",
+  "private": true,
+  "scripts": {
+    "install:backend": "cd \"backend（后端）\" && npm install",
+    "install:frontend": "cd \"frontend（前端）\" && npm install",
+    "build:frontend": "npm run install:backend && npm run install:frontend && cd \"frontend（前端）\" && npm run build",
+    "start": "cd \"backend（后端）\" && npm start",
+    "dev": "cd \"backend（后端）\" && npm run dev"
+  }
+}

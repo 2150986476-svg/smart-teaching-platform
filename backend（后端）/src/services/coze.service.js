@@ -99,24 +99,76 @@ async function sendMessageToCoze({ agent_id, user_id, message, history = [] }) {
     throw new Error(`Coze API 错误：${errMsg}`)
   }
 
-  const messages = data.data?.messages || []
   const conversationId = data.data?.conversation_id || ''
+  const chatId = data.data?.id || ''
 
-  // 提取 assistant 角色的最后一条消息作为回答
+  // Coze v3: 如果状态是 "in_progress"，需要轮询等待完成再获取消息
+  if (data.data?.status === 'in_progress' && conversationId && chatId) {
+    const retrieveUrl = `${cozeConfig.baseUrl}/v3/chat/retrieve`
+    const messagesUrl = `${cozeConfig.baseUrl}/v3/chat/message/list`
+    const maxAttempts = 30   // 最多等待 30 秒（Coze 复杂 Bot 可能需要更久）
+    const pollInterval = 1000
+
+    // 等待 chat 完成
+    let completed = false
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(resolve => setTimeout(resolve, pollInterval))
+      try {
+        const retrieveResp = await axios.get(retrieveUrl, {
+          params: { conversation_id: conversationId, chat_id: chatId },
+          headers: { 'Authorization': `Bearer ${cozeConfig.apiToken}` },
+          timeout: 10000
+        })
+        const s = retrieveResp.data?.data?.status
+        if (s === 'completed') { completed = true; break }
+        if (s === 'failed') {
+          throw new Error(`Coze Bot 处理失败：${retrieveResp.data?.data?.last_error?.msg || '未知错误'}`)
+        }
+      } catch (pollErr) {
+        if (i >= maxAttempts - 1) throw new Error(`Coze 状态轮询失败：${pollErr.message}`)
+      }
+    }
+
+    if (!completed) {
+      throw new Error(`Coze AI 响应超时（等待了 ${(maxAttempts * pollInterval) / 1000} 秒）`)
+    }
+
+    // 获取消息列表
+    const msgResp = await axios.get(messagesUrl, {
+      params: { conversation_id: conversationId, chat_id: chatId },
+      headers: { 'Authorization': `Bearer ${cozeConfig.apiToken}` },
+      timeout: 15000
+    })
+
+    const allMessages = msgResp.data?.data || []
+    const answerMessages = allMessages.filter(m => m.type === 'answer' && m.role === 'assistant')
+    const answer = answerMessages.length > 0
+      ? answerMessages.map(m => m.content).join('\n\n')
+      : '（AI 助教未返回有效回答）'
+
+    // 获取 token 用量
+    const usageResp = await axios.get(retrieveUrl, {
+      params: { conversation_id: conversationId, chat_id: chatId },
+      headers: { 'Authorization': `Bearer ${cozeConfig.apiToken}` },
+      timeout: 10000
+    })
+    const tokenUsage = usageResp.data?.data?.usage || {}
+    const tokenCount = tokenUsage.token_count || tokenUsage.total_tokens || 0
+
+    return { answer, conversationId, tokenCount }
+  }
+
+  // Fallback: 处理同步返回的情况（有 messages 的响应）
+  const messages = data.data?.messages || []
   const assistantMessages = messages.filter(m => m.role === 'assistant')
   const answer = assistantMessages.length > 0
     ? assistantMessages[assistantMessages.length - 1].content
     : '（AI 助教未返回有效回答）'
 
-  // 提取 token 用量
   const tokenUsage = data.data?.usage || {}
   const tokenCount = tokenUsage.token_count || tokenUsage.total_tokens || 0
 
-  return {
-    answer,
-    conversationId,
-    tokenCount
-  }
+  return { answer, conversationId, tokenCount }
 }
 
 // chat() 作为别名，保持向后兼容

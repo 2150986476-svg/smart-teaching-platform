@@ -85,23 +85,27 @@
 
     <!-- 右侧：聊天主区域 -->
     <div class="chat-main">
-      <!-- 无选中会话时的占位 -->
-      <div v-if="!currentSessionId" class="chat-empty">
-        <el-empty
-          :description="selectedCourseId ? '请选择或创建一个对话' : '请先选择课程'"
-          :image-size="80"
-        />
+      <!-- 无课程时的占位 -->
+      <div v-if="!selectedCourseId" class="chat-empty">
+        <el-empty description="请先选择课程" :image-size="80" />
       </div>
 
-      <!-- 消息区域 -->
+      <!-- 已选课程：始终显示消息区和输入框 -->
       <template v-else>
         <!-- 会话标题栏 -->
-        <div class="chat-header">
-          <span class="chat-title">{{ currentSession?.title || '对话' }}</span>
+        <div class="chat-header" v-if="currentSessionId && currentSession">
+          <span class="chat-title">{{ currentSession.title || '对话' }}</span>
         </div>
 
         <!-- 消息列表 -->
         <div class="chat-messages" ref="messagesContainer">
+          <!-- 欢迎提示（无会话且无消息时） -->
+          <div v-if="!currentSessionId && messages.length === 0 && !aiThinking" class="chat-welcome">
+            <div class="welcome-icon">👋</div>
+            <p class="welcome-text">欢迎使用 AI 助教！</p>
+            <p class="welcome-hint">在下方输入你的问题，开始对话吧</p>
+          </div>
+
           <div
             v-for="(msg, idx) in messages"
             :key="idx"
@@ -154,7 +158,7 @@
           </div>
         </div>
 
-        <!-- 输入区域 -->
+        <!-- 输入区域（选课程后始终可见） -->
         <div class="chat-input-area">
           <el-input
             v-model="inputText"
@@ -450,6 +454,19 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+// 欢迎提示
+.chat-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #909399;
+  .welcome-icon { font-size: 48px; margin-bottom: 16px; }
+  .welcome-text { font-size: 18px; font-weight: 500; color: #606266; margin: 0 0 8px; }
+  .welcome-hint { font-size: 14px; margin: 0; }
 }
 
 .chat-header {

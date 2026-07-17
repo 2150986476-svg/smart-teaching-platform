@@ -40,15 +40,15 @@ const sendMessage = async (req, res, next) => {
       return res.status(403).json({ code: 403, message: '无权向此课程AI助教提问（未选课）' })
     }
 
-    // 查询 AI 助教绑定 和 知识库绑定
+    // 查询 AI 助教绑定（可选，未绑定时仍可记录对话）
     const [assistantRows] = await connection.query(
       'SELECT coze_bot_id, is_active FROM ai_assistant_bind WHERE course_id = ?',
       [courseId]
     )
-    if (assistantRows.length === 0 || !assistantRows[0].is_active) {
-      return res.status(404).json({ code: 3001, message: '课程未绑定AI助教' })
-    }
-    const botId = assistantRows[0].coze_bot_id
+    // AI 绑定可选：无绑定时 botId 为 null，跳过 Coze 调用显示友好提示
+    const botId = (assistantRows.length > 0 && assistantRows[0].is_active)
+      ? assistantRows[0].coze_bot_id
+      : null
 
     // 查询知识库（用于 Coze Bot 关联知识库）
     const [kbRows] = await connection.query(
@@ -110,26 +110,62 @@ const sendMessage = async (req, res, next) => {
     )
     const history = historyRows.map(r => ({ role: r.role, content: r.content }))
 
+    // 查询课程信息 + 资料列表，作为 Coze 上下文
+    const [[courseInfo]] = await connection.query(
+      'SELECT name, description FROM course WHERE id = ? AND is_deleted = 0',
+      [courseId]
+    )
+    const [courseFiles] = await connection.query(
+      'SELECT file_name, file_type FROM course_file WHERE course_id = ? ORDER BY id',
+      [courseId]
+    )
+
+    // 构建资料上下文（拼接在用户问题前面）
+    let materialContext = ''
+    if (courseInfo) {
+      materialContext += `【当前课程】${courseInfo.name}\n`
+      if (courseInfo.description) materialContext += `【课程简介】${courseInfo.description}\n`
+    }
+    if (courseFiles.length > 0) {
+      materialContext += `【课程资料列表】\n`
+      courseFiles.forEach(f => {
+        materialContext += `- ${f.file_name} (${f.file_type})\n`
+      })
+      materialContext += `\n`
+    }
+    const contextualQuestion = materialContext
+      ? `${materialContext}【学生提问】${question}`
+      : question
+
     // ============================================================
-    // 2. 调用 Coze Chat API — 传入 agent_id, user_id, message
+    // 2. 调用 Coze Chat API（仅当 botId 存在时）
     // ============================================================
     let aiResult
-    try {
-      aiResult = await cozeService.sendMessageToCoze({
-        agent_id: botId,
-        user_id: studentId,
-        message: question,
-        history
-      })
-    } catch (cozeErr) {
-      // 3. Fallback：Coze 不可用
+    if (botId) {
+      try {
+        aiResult = await cozeService.sendMessageToCoze({
+          agent_id: botId,
+          user_id: studentId,
+          message: contextualQuestion,
+          history
+        })
+      } catch (cozeErr) {
+        aiResult = {
+          answer: 'AI服务暂不可用，请稍后重试。',
+          conversationId: '',
+          tokenCount: 0,
+          references: []
+        }
+        console.warn(`[Chat] Coze API 调用失败，使用 mock 回复：${cozeErr.message}`)
+      }
+    } else {
+      // 无 AI 绑定，返回友好提示
       aiResult = {
-        answer: 'AI服务暂未配置（Coze未连接）',
+        answer: 'AI助教暂未配置，请联系教师绑定Coze AI服务。\n\n您仍可以在此记录问题和笔记，待AI助教配置完成后即可正常使用。',
         conversationId: '',
         tokenCount: 0,
         references: []
       }
-      console.warn(`[Chat] Coze API 调用失败，使用 mock 回复：${cozeErr.message}`)
     }
 
     // 保存 AI 回复（metadata 包含 knowledgeId 用于追踪）
@@ -349,16 +385,14 @@ const standaloneChat = async (req, res, next) => {
       return res.status(403).json({ code: 403, message: '学生未选课' })
     }
 
-    // 查询 AI 助教绑定
+    // 查询 AI 助教绑定（可选）
     const [assistantRows] = await connection.query(
       'SELECT coze_bot_id, is_active FROM ai_assistant_bind WHERE course_id = ?',
       [course_id]
     )
-    if (assistantRows.length === 0 || !assistantRows[0].is_active) {
-      return res.status(404).json({ code: 3001, message: '课程未绑定AI助教' })
-    }
-    // 1. 根据 course_id 查询 agent_id
-    const botId = assistantRows[0].coze_bot_id
+    const botId = (assistantRows.length > 0 && assistantRows[0].is_active)
+      ? assistantRows[0].coze_bot_id
+      : null
 
     await connection.beginTransaction()
 
@@ -378,22 +412,26 @@ const standaloneChat = async (req, res, next) => {
       [sessionId, course_id, student_id, message]
     )
 
-    // 2. 调用 Coze Chat API（失败时自动 fallback）
+    // 2. 调用 Coze Chat API（仅当 botId 存在时）
     let aiAnswer, tokenCount
-    try {
-      const result = await cozeService.sendMessageToCoze({
-        agent_id: botId,
-        user_id: student_id,
-        message: message,
-        history: []
-      })
-      aiAnswer = result.answer
-      tokenCount = result.tokenCount
-    } catch (cozeErr) {
-      // 3. Fallback：Coze 不可用时返回占位
-      aiAnswer = 'AI服务暂未配置（Coze未连接）'
+    if (botId) {
+      try {
+        const result = await cozeService.sendMessageToCoze({
+          agent_id: botId,
+          user_id: student_id,
+          message: message,
+          history: []
+        })
+        aiAnswer = result.answer
+        tokenCount = result.tokenCount
+      } catch (cozeErr) {
+        aiAnswer = 'AI服务暂不可用，请稍后重试。'
+        tokenCount = 0
+        console.warn(`[Chat/Standalone] Coze API 调用失败：${cozeErr.message}`)
+      }
+    } else {
+      aiAnswer = 'AI助教暂未配置，请联系教师绑定Coze AI服务。'
       tokenCount = 0
-      console.warn(`[Chat/Standalone] Coze API 调用失败：${cozeErr.message}`)
     }
 
     // 4. 保存 AI 回复到 chat_record

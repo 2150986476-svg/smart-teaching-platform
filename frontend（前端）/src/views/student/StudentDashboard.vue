@@ -2,12 +2,22 @@
   <div class="student-dashboard">
     <div class="page-header">
       <h2>👋 欢迎，{{ userInfo?.realName || '同学' }}</h2>
-      <p>选择一个课程开始学习</p>
+      <div class="header-row">
+        <p>选择一个课程开始学习</p>
+        <el-input v-model="searchKeyword" placeholder="搜索课程..." clearable style="width: 250px" />
+      </div>
+      <div class="achievement-strip" v-if="achievements.badges?.length">
+        <span class="achievement-label">🏆 我的成就：</span>
+        <el-tooltip v-for="b in achievements.badges" :key="b.name" :content="b.desc">
+          <span class="badge-item" :title="b.desc">{{ b.icon }} {{ b.name }}</span>
+        </el-tooltip>
+        <span class="streak-info">🔥 连续 {{ achievements.currentStreak }} 天</span>
+      </div>
     </div>
 
     <div class="course-grid" v-loading="loading">
       <div
-        v-for="c in courses"
+        v-for="c in filteredCourses"
         :key="c.id"
         class="course-card"
       >
@@ -49,15 +59,35 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getUser } from '@/utils/auth'
+import { getAchievements } from '@/api/quiz'
 import { getMyCourses } from '@/api/student'
 
 const router = useRouter()
 const userInfo = ref(getUser())
 const courses = ref([])
 const loading = ref(false)
+const searchKeyword = ref('')
+const achievements = ref({ badges: [], currentStreak: 0 })
+
+const fetchAchievements = async () => {
+  try {
+    const res = await getAchievements()
+    achievements.value = res.data
+  } catch {}
+}
+
+const filteredCourses = computed(() => {
+  if (!searchKeyword.value) return courses.value
+  const kw = searchKeyword.value.toLowerCase()
+  return courses.value.filter(c =>
+    c.name?.toLowerCase().includes(kw) ||
+    c.teacherName?.toLowerCase().includes(kw) ||
+    c.semester?.toLowerCase().includes(kw)
+  )
+})
 
 const fetchCourses = async () => {
   loading.value = true
@@ -86,7 +116,7 @@ const gradientColor = (id) => {
   return colors[(id - 1) % colors.length]
 }
 
-onMounted(fetchCourses)
+onMounted(() => { fetchCourses(); fetchAchievements() })
 </script>
 
 <style lang="scss" scoped>
@@ -108,6 +138,26 @@ onMounted(fetchCourses)
     color: #909399;
     font-size: 14px;
   }
+}
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.achievement-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #fffbe6, #fff8e1);
+  border-radius: 8px;
+  font-size: 12px;
+  .achievement-label { font-weight: 600; color: #303133; }
+  .badge-item { padding: 2px 8px; background: rgba(255,255,255,0.8); border-radius: 12px; color: #e6a23c; cursor: default; }
+  .streak-info { margin-left: auto; font-weight: 600; color: #f56c6c; }
 }
 
 .course-grid {

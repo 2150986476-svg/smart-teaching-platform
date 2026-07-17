@@ -42,6 +42,16 @@
             />
           </el-form-item>
 
+          <el-form-item label="限时">
+            <el-select v-model="timeLimit" style="width: 200px">
+              <el-option :value="0" label="不限时" />
+              <el-option :value="300" label="5 分钟" />
+              <el-option :value="600" label="10 分钟" />
+              <el-option :value="1200" label="20 分钟" />
+              <el-option :value="1800" label="30 分钟" />
+            </el-select>
+          </el-form-item>
+
           <el-form-item>
             <el-button
               type="primary"
@@ -73,6 +83,9 @@
             {{ answeredCount }}/{{ questions.length }} 已答
           </span>
           <span class="timer">⏱ {{ formatTime(questionTimeSpent) }}</span>
+          <span v-if="timeLimit > 0" class="countdown" :class="{ urgent: globalTimeLeft < 60 }">
+            ⏳ 剩余 {{ formatTime(globalTimeLeft) }}
+          </span>
         </div>
       </div>
 
@@ -212,6 +225,9 @@
                 正确答案：{{ r.correctAnswer }}
               </span>
             </div>
+            <div class="result-explanation" v-if="r.explanation">
+              <strong>解析：</strong>{{ r.explanation }}
+            </div>
             <div class="result-kp" v-if="r.knowledgePoints?.length">
               <el-tag v-for="kp in r.knowledgePoints" :key="kp" size="small">{{ kp }}</el-tag>
             </div>
@@ -222,6 +238,15 @@
         <div class="result-actions">
           <el-button @click="resetQuiz">返回选题</el-button>
           <el-button type="primary" @click="retryQuiz">再练一次</el-button>
+        </div>
+
+        <!-- AI 学习建议 -->
+        <div v-if="aiSuggestion" class="ai-suggestion">
+          <div class="ai-header">🤖 AI 学习建议</div>
+          <div class="ai-body">{{ aiSuggestion }}</div>
+        </div>
+        <div v-else-if="aiLoading" class="ai-suggestion loading">
+          <span class="ai-loading-text">AI 正在分析你的答题情况...</span>
         </div>
       </div>
     </div>
@@ -242,16 +267,21 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import { getCourses } from '@/api/course'
 import { generateQuiz, submitQuiz } from '@/api/quiz'
+import { sendMessage } from '@/api/chat'
 import HistoryTable from './QuizHistoryTable.vue'
+
+const route = useRoute()
 
 // ===== 配置参数 =====
 const selectedCourseId = ref(null)
 const difficulty = ref('mixed')
 const questionCount = ref(10)
+const timeLimit = ref(0)       // 限时秒数，0=不限时
 const courseOptions = ref([])
 const generating = ref(false)
 
@@ -278,6 +308,14 @@ const quizResult = reactive({
 const currentQuestionIndex = ref(1)
 const questionTimeSpent = ref(0)
 let timerInterval = null
+
+// 全局倒计时（限时模式）
+const globalTimeLeft = ref(0)
+let globalTimerInterval = null
+
+// AI 建议
+const aiSuggestion = ref('')
+const aiLoading = ref(false)
 
 const showSubmitDialog = ref(false)
 const submitting = ref(false)
@@ -348,8 +386,67 @@ function formatTime(seconds) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+// 全局倒计时
+function startGlobalTimer() {
+  if (timeLimit.value <= 0) return
+  globalTimeLeft.value = timeLimit.value
+  globalTimerInterval = setInterval(() => {
+    globalTimeLeft.value--
+    if (globalTimeLeft.value <= 0) {
+      ElMessage.warning('时间到，自动提交！')
+      handleSubmit()
+    }
+  }, 1000)
+}
+
+function stopGlobalTimer() {
+  if (globalTimerInterval) {
+    clearInterval(globalTimerInterval)
+    globalTimerInterval = null
+  }
+}
+
 // ===== 开始答题 =====
 async function startQuiz() {
+  // 错题本练习模式
+  if (route.query.mode === 'practice') {
+    const stored = sessionStorage.getItem('wrongPractice')
+    if (stored) {
+      try {
+        const data = JSON.parse(stored)
+        selectedCourseId.value = data.courseId
+        questions.value = data.questions.map((q, i) => ({
+          index: i + 1,
+          stem: q.stem,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          difficulty: q.difficulty,
+          knowledgePoints: q.knowledgePoints || [],
+          explanation: q.explanation || ''
+        }))
+        sessionStorage.removeItem('wrongPractice')
+
+        // 为错题练习创建一个 batch 记录（不需要后端 batch）
+        batchId.value = 'practice-' + Date.now()
+
+        Object.keys(quizAnswers).forEach(k => delete quizAnswers[k])
+        Object.keys(questionTimes).forEach(k => delete questionTimes[k])
+        Object.keys(quizResults).forEach(k => delete quizResults[k])
+
+        aiSuggestion.value = ''
+        aiLoading.value = false
+        currentQuestionIndex.value = 1
+        showResult.value = false
+        stage.value = 'answering'
+        startTimer()
+        startGlobalTimer()
+        ElMessage.success(`从错题本中抽取 ${questions.value.length} 道题，开始练习！`)
+        generating.value = false
+        return
+      } catch {}
+    }
+  }
+
   generating.value = true
   try {
     const res = await generateQuiz({
@@ -358,17 +455,32 @@ async function startQuiz() {
       count: questionCount.value
     })
     batchId.value = res.data.batchId
-    questions.value = res.data.questions
+    questions.value = res.data.questions.map((q, i) => ({
+      index: i + 1,
+      stem: q.question,
+      options: Array.isArray(q.options)
+        ? q.options.reduce((acc, opt, idx) => { acc[String.fromCharCode(65 + idx)] = opt; return acc }, {})
+        : q.options,
+      correctAnswer: q.answer,
+      difficulty: q.difficulty,
+      knowledgePoints: q.knowledge_point
+        ? (typeof q.knowledge_point === 'string' ? q.knowledge_point.split(/[、,，]/).map(s => s.trim()).filter(Boolean) : q.knowledge_point)
+        : [],
+      explanation: q.explanation || ''
+    }))
 
     // 清空已选
     Object.keys(quizAnswers).forEach(k => delete quizAnswers[k])
     Object.keys(questionTimes).forEach(k => delete questionTimes[k])
     Object.keys(quizResults).forEach(k => delete quizResults[k])
 
+    aiSuggestion.value = ''
+    aiLoading.value = false
     currentQuestionIndex.value = 1
     showResult.value = false
     stage.value = 'answering'
     startTimer()
+    startGlobalTimer()
     ElMessage.success('题目已生成，开始答题！')
   } catch {} finally {
     generating.value = false
@@ -392,6 +504,7 @@ function switchQuestion(idx) {
 async function handleSubmit() {
   submitting.value = true
   stopTimer()
+  stopGlobalTimer()
   showSubmitDialog.value = false
 
   try {
@@ -401,9 +514,28 @@ async function handleSubmit() {
       timeSpent: questionTimes[q.index] || 0
     }))
 
+    // 错题本练习模式：本地评分，不调后端
+    if (batchId.value.startsWith('practice-')) {
+      const results = questions.value.map(q => {
+        const studentAnswer = quizAnswers[q.index] || ''
+        const isCorrect = studentAnswer === q.correctAnswer
+        return { index: q.index, isCorrect, correctAnswer: q.correctAnswer, studentAnswer, explanation: q.explanation, knowledgePoints: q.knowledgePoints }
+      })
+      const correctCount = results.filter(r => r.isCorrect).length
+      Object.assign(quizResult, {
+        score: Math.round(correctCount / questions.value.length * 100),
+        correctCount, totalCount: questions.value.length, totalTimeSpent: 0, results
+      })
+      results.forEach(r => { quizResults[r.index] = r })
+      showResult.value = true
+      stage.value = 'result'
+      fetchAiSuggestion(results)
+      submitting.value = false
+      return
+    }
+
     const res = await submitQuiz({ batchId: batchId.value, answers })
 
-    // 填充结果
     res.data.results.forEach(r => {
       quizResults[r.index] = r
     })
@@ -418,8 +550,31 @@ async function handleSubmit() {
 
     showResult.value = true
     stage.value = 'result'
+
+    // 触发 AI 学习建议
+    fetchAiSuggestion(res.data.results)
   } catch {} finally {
     submitting.value = false
+  }
+}
+
+// AI 学习建议
+async function fetchAiSuggestion(results) {
+  aiLoading.value = true
+  aiSuggestion.value = ''
+  try {
+    const wrongItems = results.filter(r => !r.isCorrect)
+    if (wrongItems.length === 0) {
+      aiSuggestion.value = '全部正确，继续保持！你对本课程的知识掌握得很好。'
+      return
+    }
+    const msg = `我刚完成了一次答题练习，共${results.length}题，错了${wrongItems.length}题。请根据我的答题情况，给出简短的学习建议（100字以内），告诉我要重点复习哪些知识点。我的错题涉及：${wrongItems.map(r => r.knowledgePoints?.join('、') || '未知').join('；')}`
+    const res = await sendMessage({ message: msg, courseId: selectedCourseId.value })
+    aiSuggestion.value = res.data.reply || res.data.answer || '请继续努力，多关注薄弱知识点。'
+  } catch {
+    aiSuggestion.value = '多练习错题，关注薄弱知识点，持续提升。'
+  } finally {
+    aiLoading.value = false
   }
 }
 
@@ -440,6 +595,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopTimer()
+  stopGlobalTimer()
 })
 
 // 切题时自动滚动到顶部
@@ -759,11 +915,50 @@ watch(currentQuestionIndex, () => {
   margin-top: 6px;
 }
 
+.result-explanation {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  border-left: 3px solid #1A5F7A;
+}
+
 .result-actions {
   display: flex;
   justify-content: center;
   gap: 16px;
   margin-top: 24px;
+}
+
+// AI 学习建议
+.ai-suggestion {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f0f9ff, #e8f4fd);
+  border: 1px solid #b3d8ff;
+  &.loading {
+    text-align: center;
+    color: #909399;
+  }
+  .ai-header { font-size: 15px; font-weight: 600; color: #1A5F7A; margin-bottom: 8px; }
+  .ai-body { font-size: 14px; color: #4a5568; line-height: 1.7; white-space: pre-wrap; }
+  .ai-loading-text { font-size: 13px; }
+}
+
+.countdown {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #1A5F7A;
+  &.urgent { color: #f56c6c; animation: pulse 1s infinite; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 // 进度文字

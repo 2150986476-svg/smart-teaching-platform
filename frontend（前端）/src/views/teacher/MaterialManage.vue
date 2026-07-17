@@ -79,8 +79,11 @@
         </el-table-column>
 
         <!-- 操作 -->
-        <el-table-column label="操作" width="220" align="center" fixed="right">
+        <el-table-column label="操作" width="300" align="center" fixed="right">
           <template #default="{ row }">
+            <el-button link type="warning" size="small" @click="handlePreview(row)" v-if="canPreview(row)">
+              预览
+            </el-button>
             <el-button link type="primary" size="small" @click="handleDownload(row)">
               下载
             </el-button>
@@ -137,6 +140,20 @@
         <el-button type="primary" :loading="uploading" @click="submitUpload">
           开始上传
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 预览弹窗 -->
+    <el-dialog v-model="showPreview" :title="previewTitle" width="820px" top="5vh" destroy-on-close>
+      <div class="preview-body">
+        <iframe v-if="previewType === 'pdf'" :src="previewUrl" class="preview-iframe"></iframe>
+        <img v-else-if="previewType === 'image'" :src="previewUrl" class="preview-image" />
+        <pre v-else-if="previewType === 'text'" class="preview-text">{{ previewContent }}</pre>
+        <el-empty v-else description="不支持在线预览，请下载后查看" />
+      </div>
+      <template #footer>
+        <el-button @click="showPreview = false">关闭</el-button>
+        <el-button type="primary" @click="handleDownload(previewRow)">下载</el-button>
       </template>
     </el-dialog>
   </div>
@@ -287,6 +304,63 @@ const submitUpload = async () => {
 const onUploadSuccess = () => {}
 const onUploadError = () => {}
 
+// ========== 预览 ==========
+const showPreview = ref(false)
+const previewType = ref('')
+const previewUrl = ref('')
+const previewContent = ref('')
+const previewTitle = ref('')
+const previewRow = ref(null)
+
+const canPreview = (row) => {
+  const type = row.fileType?.toLowerCase()
+  return ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'txt', 'md'].includes(type)
+}
+
+const handlePreview = async (row) => {
+  previewRow.value = row
+  previewTitle.value = row.fileName
+  const type = row.fileType?.toLowerCase()
+
+  if (type === 'pdf') {
+    previewType.value = 'pdf'
+    // 直接获取文件 blob 并创建 object URL
+    try {
+      const baseURL = import.meta.env.VITE_API_BASE || ''
+      const token = getToken()
+      const resp = await fetch(`${baseURL}/api/courses/${selectedCourseId.value}/materials/${row.id}/download`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const blob = await resp.blob()
+      previewUrl.value = URL.createObjectURL(blob)
+      showPreview.value = true
+    } catch {
+      ElMessage.error('预览失败')
+    }
+  } else if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(type)) {
+    previewType.value = 'image'
+    const baseURL = import.meta.env.VITE_API_BASE || ''
+    previewUrl.value = `${baseURL}/api/courses/${selectedCourseId.value}/materials/${row.id}/download?token=${getToken()}`
+    showPreview.value = true
+  } else if (['txt', 'md'].includes(type)) {
+    previewType.value = 'text'
+    try {
+      const baseURL = import.meta.env.VITE_API_BASE || ''
+      const token = getToken()
+      const resp = await fetch(`${baseURL}/api/courses/${selectedCourseId.value}/materials/${row.id}/download`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      previewContent.value = await resp.text()
+      showPreview.value = true
+    } catch {
+      ElMessage.error('预览失败')
+    }
+  } else {
+    previewType.value = 'unsupported'
+    showPreview.value = true
+  }
+}
+
 // 初始化
 onMounted(fetchCourses)
 </script>
@@ -363,5 +437,19 @@ onMounted(fetchCourses)
   :deep(.el-upload-dragger) {
     padding: 32px;
   }
+}
+
+.preview-body {
+  min-height: 300px;
+  max-height: 70vh;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.preview-iframe { width: 100%; height: 70vh; border: none; }
+.preview-image { max-width: 100%; max-height: 65vh; object-fit: contain; }
+.preview-text { width: 100%; max-height: 65vh; overflow: auto; white-space: pre-wrap;
+  padding: 16px; background: #f8f9fa; border-radius: 6px; font-size: 13px; line-height: 1.6; color: #303133;
 }
 </style>

@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 
 const request = axios.create({
   baseURL: '/api',
-  timeout: 10000
+  timeout: 60000  // AI 聊天需要 ~10-15s，预留足够时间
 })
 
 // 请求拦截器 - 携带 Token

@@ -7,8 +7,8 @@ const materialController = require('../controllers/material.controller')
 const { authenticate, authorize } = require('../middleware/auth')
 
 // 资料管理需教师/管理员权限
-router.use(authenticate)
-router.use(authorize('teacher', 'admin'))
+// 注意：不使用 router.use() 全局中间件，避免拦截其他路由器的请求
+const teacherAuth = [authenticate, authorize('teacher', 'admin')]
 
 // multer 磁盘存储配置 — 临时目录，上传成功后移动到课程目录
 const uploadTmpDir = path.resolve(__dirname, '../../uploads/tmp')
@@ -42,17 +42,18 @@ const upload = multer({
 // 上传资料
 router.post(
   '/courses/:courseId/materials',
+  ...teacherAuth,
   upload.single('file'),
   materialController.uploadMaterial
 )
 
 // 获取资料列表
-router.get('/courses/:courseId/materials', materialController.getMaterials)
+router.get('/courses/:courseId/materials', ...teacherAuth, materialController.getMaterials)
 
 // 删除资料
-router.delete('/courses/:courseId/materials/:materialId', materialController.deleteMaterial)
+router.delete('/courses/:courseId/materials/:materialId', ...teacherAuth, materialController.deleteMaterial)
 
 // 下载资料
-router.get('/courses/:courseId/materials/:materialId/download', materialController.downloadMaterial)
+router.get('/courses/:courseId/materials/:materialId/download', ...teacherAuth, materialController.downloadMaterial)
 
 module.exports = router

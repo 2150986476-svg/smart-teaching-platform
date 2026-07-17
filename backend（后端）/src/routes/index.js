@@ -36,4 +36,7 @@ router.use('/', require('./knowledge.routes'))
 // 操作日志模块（教师查看修改记录）
 router.use('/', require('./log.routes'))
 
+// 错题本模块（学生查看、练习错题）
+router.use('/', require('./wrongbook.routes'))
+
 module.exports = router

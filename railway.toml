@@ -3,14 +3,11 @@
 
 [build]
 builder = "nixpacks"
-buildCommand = "cd \"backend（后端）\" && npm install && npm run build:frontend"
+buildCommand = "npm run build:frontend"
 
 [deploy]
-startCommand = "cd \"backend（后端）\" && npm start"
-healthcheckPath = "/"
+startCommand = "npm start"
+healthcheckPath = "/api/health"
 
 [service]
 name = "smart-teaching-platform"
-
-# MySQL 数据库（在 Railway 面板中添加 MySQL 插件后自动注入）
-# DATABASE_URL 环境变量会被 Railway 自动设置

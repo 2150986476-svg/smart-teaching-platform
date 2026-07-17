@@ -173,25 +173,27 @@ const createCourse = async (req, res, next) => {
     )
     const courseId = courseResult.insertId
 
-    // 如果提供了 AI 助教配置，则创建绑定
-    if (aiAssistant && aiAssistant.cozeBotId) {
-      const {
-        cozeBotId,
-        assistantName = 'AI助教',
-        assistantAvatar = null,
-        welcomeMessage = '您好，我是本课程的AI助教，有什么可以帮助您的？',
-        systemPrompt = null,
-        temperature = 0.70,
-        maxTokens = 2048
-      } = aiAssistant
+    // 自动绑定默认 AI 助教（使用通用 Course Bot）
+    const DEFAULT_BOT_ID = '7658283131791294516' // 课程智能学习助教
+    const systemPrompt = `你是课程「${name}」的AI学习助教。你的职责是帮助学生理解和掌握本课程的知识。
 
-      await connection.query(
-        `INSERT INTO ai_assistant_bind
-         (course_id, coze_bot_id, workflow_id, assistant_name, assistant_avatar, welcome_message, system_prompt, temperature, max_tokens, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        [courseId, cozeBotId, aiAssistant.workflowId || null, assistantName, assistantAvatar, welcomeMessage, systemPrompt, temperature, maxTokens]
-      )
-    }
+回答规则：
+1. **资料优先**：如果学生的问题可以通过本课程上传的资料（课件、笔记、教材等）解答，请优先引用资料内容，并在回答末尾标注引用来源（如：【引自《XXX课件》第X章】）。
+2. **AI补充**：如果资料中没有相关内容，你可以根据自身知识进行回答，但需说明"以下回答基于AI自身知识，仅供参考"。
+3. **格式要求**：回答应结构清晰，适当使用标题、列表、代码块等格式；涉及专业术语时给出解释。
+4. **提问引导**：如果学生的问题比较宽泛，可以引导他们提出更具体的问题。
+
+${description ? `课程简介：${description}` : ''}`
+
+    await connection.query(
+      `INSERT INTO ai_assistant_bind
+       (course_id, coze_bot_id, workflow_id, assistant_name, welcome_message, system_prompt, temperature, max_tokens, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+       ON DUPLICATE KEY UPDATE coze_bot_id=VALUES(coze_bot_id), system_prompt=VALUES(system_prompt), is_active=1`,
+      [courseId, DEFAULT_BOT_ID, null, `${name}助教`,
+       `你好！我是「${name}」课程的AI助教，我可以根据课程资料解答你的问题，有什么想了解的吗？`,
+       systemPrompt, 0.70, 2048]
+    )
 
     await connection.commit()
 

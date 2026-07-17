@@ -120,7 +120,8 @@ function normalizeQuestions(questions, fallbackDifficulty) {
     options: normalizeOptions(q.options),
     answer: q.answer || q.correct_answer || q.correctAnswer || q.key || '',
     difficulty: q.difficulty || fallbackDifficulty || 'medium',
-    knowledge_point: q.knowledge_point || q.knowledgePoint || q.knowledge || ''
+    knowledge_point: q.knowledge_point || q.knowledgePoint || (Array.isArray(q.knowledgePoints) ? q.knowledgePoints.join('、') : '') || '',
+    explanation: q.explanation || q.analysis || q.answer_explanation || ''
   }))
 }
 

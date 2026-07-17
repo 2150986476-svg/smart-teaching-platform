@@ -53,6 +53,16 @@ const routes = [
         path: 'analysis',
         name: 'AnalysisPage',
         component: () => import('@/views/student/AnalysisPage.vue')
+      },
+      {
+        path: 'wrong-questions',
+        name: 'WrongBookPage',
+        component: () => import('@/views/student/WrongBookPage.vue')
+      },
+      {
+        path: 'leaderboard',
+        name: 'LeaderboardPage',
+        component: () => import('@/views/student/LeaderboardPage.vue')
       }
     ]
   },
@@ -91,14 +101,21 @@ const routes = [
         path: 'logs',
         name: 'OperationLog',
         component: () => import('@/views/teacher/OperationLog.vue')
+      },
+      {
+        path: 'class-analytics',
+        name: 'ClassAnalytics',
+        component: () => import('@/views/teacher/ClassAnalytics.vue')
       }
     ]
   },
 
-  // 默认重定向到登录页
+  // 首页 — 统一入口，展示教师/学生登录入口
   {
     path: '/',
-    redirect: '/login'
+    name: 'Home',
+    component: () => import('@/views/HomePage.vue'),
+    meta: { guest: true }
   }
 ]
 

@@ -8,19 +8,19 @@ router.post('/chat', chatController.standaloneChat)
 
 // === 学生 JWT 路由 ===
 // 以下路由需要学生认证
-router.use(authenticate)
-router.use(authorize('student'))
+// 注意：不使用 router.use() 全局中间件，避免拦截其他路由器的请求
+const studentAuth = [authenticate, authorize('student')]
 
 // AI 问答 — 学生提问
-router.post('/student/chat', chatController.sendMessage)
+router.post('/student/chat', ...studentAuth, chatController.sendMessage)
 
 // 获取会话列表
-router.get('/student/chat/sessions', chatController.getSessions)
+router.get('/student/chat/sessions', ...studentAuth, chatController.getSessions)
 
 // 获取会话消息列表
-router.get('/student/chat/sessions/:sessionId', chatController.getSessionMessages)
+router.get('/student/chat/sessions/:sessionId', ...studentAuth, chatController.getSessionMessages)
 
 // 删除会话
-router.delete('/student/chat/sessions/:sessionId', chatController.deleteSession)
+router.delete('/student/chat/sessions/:sessionId', ...studentAuth, chatController.deleteSession)
 
 module.exports = router

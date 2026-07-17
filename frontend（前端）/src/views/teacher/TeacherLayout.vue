@@ -29,6 +29,10 @@
           <span class="nav-icon">📋</span>
           <span>操作日志</span>
         </router-link>
+        <router-link to="/dashboard/class-analytics" class="nav-item" :class="{ active: isActive('/dashboard/class-analytics') }">
+          <span class="nav-icon">📈</span>
+          <span>班级总览</span>
+        </router-link>
       </nav>
 
       <div class="sidebar-footer">

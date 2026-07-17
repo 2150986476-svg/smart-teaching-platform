@@ -218,12 +218,21 @@ const generateQuiz = async (req, res, next) => {
 
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i]
+      // 知识点可能是字符串（"A、B"）或数组（["A", "B"]）
+      let kpArray = null
+      if (q.knowledge_point) {
+        if (Array.isArray(q.knowledge_point)) {
+          kpArray = q.knowledge_point.filter(Boolean)
+        } else if (typeof q.knowledge_point === 'string') {
+          kpArray = q.knowledge_point.split(/[、,，]/).map(s => s.trim()).filter(Boolean)
+        }
+      }
       await connection.query(recordSql, [
         batchId, resolvedCourseId, studentId, i + 1,
         JSON.stringify({ stem: q.question, options: q.options }),
         q.answer || '',
         q.difficulty || difficulty,
-        q.knowledge_point ? JSON.stringify(q.knowledge_point.split('、')) : null,
+        kpArray ? JSON.stringify(kpArray) : null,
         q.explanation || null
       ])
     }
@@ -244,7 +253,8 @@ const generateQuiz = async (req, res, next) => {
           options: Array.isArray(q.options) ? q.options : [],
           answer: q.answer || '',
           difficulty: q.difficulty || difficulty,
-          knowledge_point: q.knowledge_point || ''
+          knowledge_point: q.knowledge_point || '',
+          explanation: q.explanation || ''
         })),
         createdAt: new Date().toISOString()
       }
@@ -548,18 +558,21 @@ function pickFromBank(difficulty, count) {
     const mediumNeeded = Math.round(count * 0.4)
     const hardNeeded = count - easyNeeded - mediumNeeded
 
+    // 标记每道题的真实难度
+    const tagged = (arr, tag) => arr.map(q => ({ ...q, _difficulty: tag }))
+
     pool = [
-      ...pickRandom(QUESTION_BANK.easy, easyNeeded),
-      ...pickRandom(QUESTION_BANK.medium, mediumNeeded),
-      ...pickRandom(QUESTION_BANK.hard, hardNeeded)
+      ...tagged(pickRandom(QUESTION_BANK.easy, easyNeeded), 'easy'),
+      ...tagged(pickRandom(QUESTION_BANK.medium, mediumNeeded), 'medium'),
+      ...tagged(pickRandom(QUESTION_BANK.hard, hardNeeded), 'hard')
     ]
     while (pool.length < count) {
-      pool.push(...pickRandom(QUESTION_BANK.medium, 1))
+      pool.push(...tagged(pickRandom(QUESTION_BANK.medium, 1), 'medium'))
     }
   } else if (QUESTION_BANK[difficulty]) {
-    pool = pickRandom(QUESTION_BANK[difficulty], count)
+    pool = pickRandom(QUESTION_BANK[difficulty], count).map(q => ({ ...q, _difficulty: difficulty }))
   } else {
-    pool = pickRandom(QUESTION_BANK.medium, count)
+    pool = pickRandom(QUESTION_BANK.medium, count).map(q => ({ ...q, _difficulty: 'medium' }))
   }
 
   pool = shuffleArray(pool).slice(0, count)
