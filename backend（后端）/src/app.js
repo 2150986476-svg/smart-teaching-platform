@@ -8,6 +8,7 @@ const compression = require('compression')
 
 const app = express()
 const PORT = process.env.PORT || 3000
+const runMigration = require('./config/migrate')
 
 // 中间件
 app.use(compression())  // gzip/brotli 压缩，大幅减少响应体积
@@ -38,7 +39,13 @@ app.get('*', (req, res) => {
 // 错误处理中间件
 app.use(require('./middleware/errorHandler'))
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  // 自动建表迁移
+  try {
+    await runMigration()
+  } catch (e) {
+    console.error('Migration error (server still running):', e.message)
+  }
   console.log(`服务已启动: http://localhost:${PORT}`)
 
   // 本地开发时启动 localtunnel 公网隧道
