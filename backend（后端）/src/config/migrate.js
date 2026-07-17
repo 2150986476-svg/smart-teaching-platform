@@ -48,6 +48,9 @@ async function runMigration() {
         }
       }
       console.log('[Migration] 数据库表检查完成 ✓')
+
+      // 种子数据
+      await seedUsers(connection)
     } finally {
       connection.release()
     }
@@ -382,6 +385,65 @@ INSERT IGNORE INTO system_config (config_key, config_value, description) VALUES
 ('coze_api_timeout', '30000', 'Coze API调用超时时间（毫秒）'),
 ('leaderboard_auto_refresh', '1', '排行榜是否自动刷新：0否 1是');
 `
+}
+
+async function seedUsers(connection) {
+  try {
+    const bcrypt = require('bcryptjs')
+    const hash = await bcrypt.hash('123456', 10)
+
+    const users = [
+      ["admin", hash, "系统管理员", "admin", "admin@example.com", "技术部", null],
+      ["T001",  hash, "张老师",   "teacher", "zhang@example.com", "计算机学院", null],
+      ["S001",  hash, "李明",     "student", null, null, "计算机学院2024级1班"],
+      ["S002",  hash, "王小红",   "student", null, null, "计算机学院2024级1班"],
+    ]
+
+    for (const u of users) {
+      await connection.execute(
+        `INSERT IGNORE INTO sys_user (username, password, real_name, role, email, department, class_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        u
+      )
+    }
+
+    // 创建示例课程
+    const [teacherRows] = await connection.execute(
+      `SELECT id FROM sys_user WHERE username = 'T001' AND role = 'teacher'`
+    )
+
+    if (teacherRows.length > 0) {
+      const teacherId = teacherRows[0].id
+      await connection.execute(
+        `INSERT IGNORE INTO course (id, teacher_id, name, description, semester, status, class_info)
+         VALUES (1, ?, '人工智能导论', '介绍人工智能的基本概念、算法和应用', '2026-2027-1', 1, '计算机学院2024级1班')`,
+        [teacherId]
+      )
+    }
+
+    // 学生选课
+    const [studentRows] = await connection.execute(
+      `SELECT id FROM sys_user WHERE role = 'student'`
+    )
+    if (studentRows.length > 0) {
+      for (const s of studentRows) {
+        await connection.execute(
+          `INSERT IGNORE INTO course_enrollment (course_id, student_id) VALUES (1, ?)`,
+          [s.id]
+        )
+      }
+    }
+
+    // 绑定 AI 助教
+    await connection.execute(
+      `INSERT IGNORE INTO ai_assistant_bind (course_id, coze_bot_id, workflow_id, assistant_name, is_active)
+       VALUES (1, '7658214917564596233', '765822217184069266', 'AI助教', 1)`
+    )
+
+    console.log('[Migration] 种子数据插入完成 ✓')
+  } catch (e) {
+    console.warn('[Migration] 种子数据跳过:', e.message.substring(0, 100))
+  }
 }
 
 module.exports = runMigration
