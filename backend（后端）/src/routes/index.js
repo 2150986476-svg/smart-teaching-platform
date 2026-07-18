@@ -39,4 +39,13 @@ router.use('/', require('./log.routes'))
 // 错题本模块（学生查看、练习错题）
 router.use('/', require('./wrongbook.routes'))
 
+// 排行榜模块（学生查看课程排行榜）
+router.use('/', require('./leaderboard.routes'))
+
+// 成就模块（学生查看个人成就与徽章）
+router.use('/', require('./achievement.routes'))
+
+// 班级分析模块（教师查看班级成绩总览）
+router.use('/', require('./classAnalytics.routes'))
+
 module.exports = router

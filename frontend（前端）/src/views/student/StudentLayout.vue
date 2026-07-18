@@ -35,7 +35,7 @@
       </nav>
 
       <div class="sidebar-footer">
-        <router-link to="/change-password" class="nav-item">
+        <router-link to="/forgot-password" class="nav-item">
           <span class="nav-icon">🔑</span>
           <span>修改密码</span>
         </router-link>
