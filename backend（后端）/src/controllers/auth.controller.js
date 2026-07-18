@@ -200,4 +200,57 @@ const logout = async (req, res, next) => {
   }
 }
 
-module.exports = { teacherLogin, studentLogin, logout }
+/**
+ * 学生忘记密码 — 验证身份后重置密码
+ * POST /api/auth/student/forgot-password
+ * Body: { username, realName, newPassword }
+ */
+const studentForgotPassword = async (req, res, next) => {
+  try {
+    const { username, realName, newPassword } = req.body
+
+    if (!username || !realName || !newPassword) {
+      return res.status(400).json({ code: 400, message: '学号、姓名和新密码不能为空' })
+    }
+
+    if (newPassword.length < 6 || newPassword.length > 32) {
+      return res.status(400).json({ code: 400, message: '密码长度需为6-32位' })
+    }
+
+    // 查询学生
+    const [rows] = await pool.query(
+      'SELECT * FROM sys_user WHERE username = ? AND role = "student"',
+      [username]
+    )
+
+    if (rows.length === 0) {
+      return res.status(404).json({ code: 404, message: '学号不存在' })
+    }
+
+    const user = rows[0]
+
+    // 验证姓名是否匹配
+    if (user.real_name !== realName) {
+      return res.status(401).json({ code: 401, message: '身份验证失败：姓名不匹配' })
+    }
+
+    // 加密新密码
+    const salt = await bcrypt.genSalt(10)
+    const hashedPassword = await bcrypt.hash(newPassword, salt)
+
+    // 重置密码，标记为首次登录
+    await pool.query(
+      'UPDATE sys_user SET password = ?, first_login = 1 WHERE id = ?',
+      [hashedPassword, user.id]
+    )
+
+    res.json({
+      code: 200,
+      message: '密码重置成功，请使用新密码登录'
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { teacherLogin, studentLogin, logout, studentForgotPassword }

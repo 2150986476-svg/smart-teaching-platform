@@ -42,6 +42,7 @@
         </el-form-item>
       </el-form>
       <div class="login-footer">
+        <el-link type="primary" @click="$router.push('/forgot-password')">忘记密码？</el-link>
         <el-link type="primary" @click="goToTeacherLogin">教师登录 →</el-link>
       </div>
     </div>
@@ -135,5 +136,8 @@ const goToTeacherLogin = () => {
 .login-footer {
   text-align: center;
   margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px;
 }
 </style>

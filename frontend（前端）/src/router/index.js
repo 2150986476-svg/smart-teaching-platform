@@ -16,12 +16,19 @@ const routes = [
     component: () => import('@/views/login/StudentLogin.vue'),
     meta: { guest: true }
   },
-  // 修改密码（独立页面，全屏居中，首次登录强制跳转此页）
+  // 修改密码（教师/管理员使用旧密码修改）
   {
     path: '/change-password',
     name: 'ChangePassword',
     component: () => import('@/views/ChangePassword.vue'),
-    meta: { requiresAuth: true, allowFirstLogin: true }
+    meta: { requiresAuth: true, roles: ['teacher', 'admin', 'assistant'] }
+  },
+  // 学生忘记密码（无需登录，验证身份后重置）
+  {
+    path: '/forgot-password',
+    name: 'StudentForgotPassword',
+    component: () => import('@/views/StudentForgotPassword.vue'),
+    meta: { guest: true }
   },
 
   // ======================== 学生端布局 ========================
@@ -136,13 +143,6 @@ router.beforeEach((to, from, next) => {
       return
     }
 
-    // 首次登录强制改密（学生角色，且 firstLogin 为 true）
-    const isStudent = user?.role === 'student'
-    if (isStudent && user?.firstLogin && !to.meta.allowFirstLogin) {
-      next('/change-password')
-      return
-    }
-
     // 角色校验
     if (to.meta.roles && Array.isArray(to.meta.roles)) {
       if (!user || !to.meta.roles.includes(user.role)) {
@@ -156,11 +156,6 @@ router.beforeEach((to, from, next) => {
   else if (to.meta.guest) {
     if (token && user) {
       if (user.role === 'student') {
-        // 首次登录强制改密
-        if (user.firstLogin) {
-          next('/change-password')
-          return
-        }
         next('/student/courses')
       } else {
         next('/dashboard/courses')
