@@ -113,11 +113,11 @@
         ref="uploadRef"
         class="upload-area"
         drag
-        :action="uploadUrl"
+        action="#"
         :headers="uploadHeaders"
         :before-upload="beforeUpload"
-        :on-success="onUploadSuccess"
-        :on-error="onUploadError"
+        :on-change="onFileChange"
+        :on-remove="onFileRemove"
         :limit="5"
         multiple
         :auto-upload="false"
@@ -160,7 +160,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, UploadFilled } from '@element-plus/icons-vue'
 import { getMaterials, uploadMaterial, deleteMaterial, downloadMaterial } from '@/api/material'
@@ -238,15 +238,28 @@ const handleDelete = async (row) => {
 const showUploadDialog = ref(false)
 const uploadRef = ref(null)
 const uploading = ref(false)
+const selectedFiles = ref([])
 
-const uploadUrl = computed(() => {
-  // 不走 axios，直接用 action 属性上传（因为需要 FormData + 手动触发）
-  return ''
+// 打开对话框时重置文件列表
+watch(showUploadDialog, (val) => {
+  if (val) {
+    selectedFiles.value = []
+  }
 })
 
 const uploadHeaders = computed(() => ({
   Authorization: `Bearer ${getToken()}`
 }))
+
+// 文件选择变化时，手动追踪已选文件
+const onFileChange = (file, fileList) => {
+  selectedFiles.value = fileList
+}
+
+// 文件移除时更新追踪列表
+const onFileRemove = (file, fileList) => {
+  selectedFiles.value = fileList
+}
 
 // 前端校验
 const beforeUpload = (file) => {
@@ -266,8 +279,7 @@ const beforeUpload = (file) => {
 
 // 手动上传（通过 axios 调用 API）
 const submitUpload = async () => {
-  const files = uploadRef.value?.uploadFiles || []
-  if (files.length === 0) {
+  if (selectedFiles.value.length === 0) {
     ElMessage.warning('请选择文件')
     return
   }
@@ -276,7 +288,7 @@ const submitUpload = async () => {
   let successCount = 0
   let failCount = 0
 
-  for (const uploadFile of files) {
+  for (const uploadFile of selectedFiles.value) {
     if (uploadFile.status === 'success') continue
     try {
       const formData = new FormData()
@@ -299,13 +311,10 @@ const submitUpload = async () => {
     ElMessage.success(`成功上传 ${successCount} 个文件` + (failCount > 0 ? `，${failCount} 个失败` : ''))
     fetchMaterials()
   }
-  if (successCount === files.length) {
+  if (successCount === selectedFiles.value.length) {
     showUploadDialog.value = false
   }
 }
-
-const onUploadSuccess = () => {}
-const onUploadError = () => {}
 
 // ========== 预览 ==========
 const showPreview = ref(false)

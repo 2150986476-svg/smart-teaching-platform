@@ -42,7 +42,6 @@ export function removeStudentFromCourse(courseId, studentId) {
  */
 export function importStudents(courseId, formData) {
   return request.post(`/courses/${courseId}/students/import`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 60000
   })
 }
