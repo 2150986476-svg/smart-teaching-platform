@@ -284,9 +284,12 @@ const submitUpload = async () => {
       await uploadMaterial(selectedCourseId.value, formData)
       uploadFile.status = 'success'
       successCount++
-    } catch {
+    } catch (err) {
       uploadFile.status = 'fail'
       failCount++
+      // 提取后端返回的错误信息
+      const msg = err?.response?.data?.message || err?.message || '上传失败'
+      ElMessage.error(`「${uploadFile.name}」${msg}`)
     }
   }
 

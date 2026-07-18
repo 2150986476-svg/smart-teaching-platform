@@ -16,7 +16,6 @@ export function getMaterials(courseId, params) {
  */
 export function uploadMaterial(courseId, formData) {
   return request.post(`/courses/${courseId}/materials`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 120000
   })
 }
