@@ -82,6 +82,9 @@ async function sleep(ms) {
 
 /**
  * Attempt to login to Coze.cn via Puppeteer
+ * Supports two auth modes:
+ *   1. Cookie-based: Uses COZE_COOKIES env var (for SMS-login users without password)
+ *   2. Password-based: Uses COZE_EMAIL + COZE_PASSWORD env vars
  */
 async function loginToCoze(browser) {
   const page = await browser.newPage();
@@ -89,6 +92,60 @@ async function loginToCoze(browser) {
   // Set a realistic viewport
   await page.setViewport({ width: 1280, height: 800 });
   
+  // --- Cookie-based auth mode ---
+  const cozeCookies = process.env.COZE_COOKIES;
+  if (cozeCookies) {
+    console.log('[Renewal] Cookie-based auth mode detected (COZE_COOKIES is set).');
+    console.log('[Renewal] Setting cookies and navigating to Coze.cn...');
+    
+    // Parse and set cookies before navigation
+    const cookiePairs = cozeCookies.split(';').map(c => c.trim()).filter(Boolean);
+    const cookieObjects = cookiePairs.map(pair => {
+      const [name, ...valueParts] = pair.split('=');
+      return {
+        name: name.trim(),
+        value: valueParts.join('='),
+        domain: '.coze.cn',
+        path: '/',
+        httpOnly: false,
+        secure: true,
+        sameSite: 'Lax'
+      };
+    });
+    
+    await page.setCookie(...cookieObjects);
+    console.log(`[Renewal] Set ${cookieObjects.length} cookies.`);
+    
+    // Navigate to Coze.cn
+    await page.goto('https://www.coze.cn/', { waitUntil: 'networkidle2', timeout: 30000 });
+    
+    // Check if login was successful
+    const isLoggedIn = await page.evaluate(() => {
+      return !!document.querySelector('[class*="user"]') || 
+             document.cookie.includes('passport_csrf_token');
+    });
+    
+    if (isLoggedIn) {
+      console.log('[Renewal] Cookie-based auth successful!');
+      return page;
+    }
+    
+    console.log('[Renewal] Cookie auth failed, falling through to password auth...');
+    // Fall through to password-based auth below
+  }
+  
+  // --- Password-based auth mode ---
+  const email = process.env.COZE_EMAIL;
+  const password = process.env.COZE_PASSWORD;
+  
+  if (!email || !password) {
+    throw new Error(
+      'No valid auth method configured. Set either COZE_COOKIES (for SMS-login users) ' +
+      'or COZE_EMAIL + COZE_PASSWORD (for password-login users).'
+    );
+  }
+  
+  console.log('[Renewal] Password-based auth mode.');
   console.log('[Renewal] Navigating to Coze.cn...');
   await page.goto('https://www.coze.cn/', { waitUntil: 'networkidle2', timeout: 30000 });
   
@@ -106,8 +163,6 @@ async function loginToCoze(browser) {
   // Click login button - try common selectors
   console.log('[Renewal] Looking for login button...');
   
-  // Coze.cn often shows a login modal or redirects to login page
-  // Try to find and click the login/avatar button
   const loginSelectors = [
     'button:has-text("登录")',
     'a:has-text("登录")',
@@ -131,7 +186,6 @@ async function loginToCoze(browser) {
   }
   
   if (!clicked) {
-    // Try direct navigation to a login-required page which will redirect to login
     console.log('[Renewal] Trying direct login redirect...');
     await page.goto('https://www.coze.cn/open/oauth/pats', { waitUntil: 'networkidle2', timeout: 30000 });
     await sleep(3000);
@@ -139,12 +193,9 @@ async function loginToCoze(browser) {
     await sleep(2000);
   }
   
-  // Now we should be on a login page. Look for input fields.
-  // Coze uses ByteDance passport - may redirect to accounts.google.com or show phone/email input
   const currentUrl = page.url();
   console.log(`[Renewal] Current URL after login click: ${currentUrl}`);
   
-  // Try to find email/phone input
   const phoneSelectors = [
     'input[type="text"]',
     'input[type="email"]',
@@ -173,16 +224,11 @@ async function loginToCoze(browser) {
   }
   
   if (phoneInput) {
-    const email = process.env.COZE_EMAIL;
-    if (!email) {
-      throw new Error('COZE_EMAIL environment variable is not set');
-    }
     console.log('[Renewal] Entering email/phone...');
     await phoneInput.click();
     await phoneInput.type(email, { delay: 100 });
     await sleep(1000);
     
-    // Look for "Next" or continue button
     const nextSelectors = [
       'button:has-text("下一步")',
       'button:has-text("继续")',
@@ -204,7 +250,6 @@ async function loginToCoze(browser) {
     }
     await sleep(2000);
     
-    // Now enter password
     const passSelectors = [
       'input[type="password"]',
       'input[name="password"]',
@@ -224,16 +269,11 @@ async function loginToCoze(browser) {
     }
     
     if (passInput) {
-      const password = process.env.COZE_PASSWORD;
-      if (!password) {
-        throw new Error('COZE_PASSWORD environment variable is not set');
-      }
       console.log('[Renewal] Entering password...');
       await passInput.click();
       await passInput.type(password, { delay: 100 });
       await sleep(500);
       
-      // Click submit/login
       const submitSelectors = [
         'button:has-text("登录")',
         'button:has-text("登 录")',
@@ -253,15 +293,11 @@ async function loginToCoze(browser) {
         } catch (e) {}
       }
       
-      // Wait for redirect after login
       await sleep(5000);
-      
-      // Take a screenshot for debugging
       await page.screenshot({ path: '/tmp/coze-after-login.png' });
     }
   }
   
-  // Wait for redirect to complete
   try {
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
   } catch (e) {

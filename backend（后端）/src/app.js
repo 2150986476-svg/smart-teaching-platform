@@ -55,8 +55,13 @@ app.listen(PORT, async () => {
   console.log(`服务已启动: http://localhost:${PORT}`)
 
   // 生产环境：启动 Token 自动续期任务（每 25 天执行一次）
-  if (process.env.NODE_ENV === 'production' && process.env.COZE_EMAIL && process.env.COZE_PASSWORD) {
-    console.log('[Cron] Token auto-renewal enabled (every 25 days)')
+  // 支持两种认证方式：Cookie 模式 (COZE_COOKIES) 或 密码模式 (COZE_EMAIL + COZE_PASSWORD)
+  const hasCookieAuth = process.env.COZE_COOKIES
+  const hasPasswordAuth = process.env.COZE_EMAIL && process.env.COZE_PASSWORD
+  
+  if (process.env.NODE_ENV === 'production' && (hasCookieAuth || hasPasswordAuth)) {
+    const authMode = hasCookieAuth ? 'cookie' : 'password'
+    console.log(`[Cron] Token auto-renewal enabled (every 25 days, mode: ${authMode})`)
     // 启动时先检查是否需要立即续期
     try {
       const { renewToken } = require('../scripts/renew-coze-token')
