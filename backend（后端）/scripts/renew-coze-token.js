@@ -81,24 +81,61 @@ async function sleep(ms) {
 }
 
 /**
- * Attempt to login to Coze.cn via Puppeteer
- * Supports two auth modes:
- *   1. Cookie-based: Uses COZE_COOKIES env var (for SMS-login users without password)
- *   2. Password-based: Uses COZE_EMAIL + COZE_PASSWORD env vars
+ * Attempt to login to Coze.cn via Puppeteer.
+ * Auth priority:
+ *   1. Persisted cookies in userDataDir (survive across runs via Railway volume)
+ *   2. COZE_COOKIES env var - seed cookies for initial setup (SMS-login users)
+ *   3. COZE_EMAIL + COZE_PASSWORD env vars (password-login users)
  */
 async function loginToCoze(browser) {
   const page = await browser.newPage();
-  
-  // Set a realistic viewport
   await page.setViewport({ width: 1280, height: 800 });
   
-  // --- Cookie-based auth mode ---
+  // Helper: check login status on current page (runs in browser context)
+  const checkLogin = async () => {
+    return await page.evaluate(() => {
+      const hasCsrf = document.cookie.includes('passport_csrf_token');
+      // Check for user avatar/menu elements (indicating logged-in state)
+      const userEls = document.querySelectorAll('[class*="user"], [class*="avatar"], [class*="User"]');
+      let hasUserEl = false;
+      for (const el of userEls) {
+        // Filter out non-user elements that happen to match
+        if (el.textContent && !el.textContent.includes('登录') && !el.textContent.includes('Login')) {
+          hasUserEl = true;
+          break;
+        }
+      }
+      // Check for explicit login buttons (indicating NOT logged in)
+      const allBtns = document.querySelectorAll('button, a');
+      let hasLoginBtn = false;
+      for (const el of allBtns) {
+        const text = (el.textContent || '').trim();
+        if (text === '登录' || text === 'Login' || text === 'Sign in') {
+          hasLoginBtn = true;
+          break;
+        }
+      }
+      return { loggedIn: hasCsrf && !hasLoginBtn, hasCsrf, hasUserEl };
+    });
+  };
+  
+  // --- Layer 1: Try persisted cookies (userDataDir) ---
+  console.log('[Renewal] Layer 1: Checking persisted cookies...');
+  await page.goto('https://www.coze.cn/', { waitUntil: 'networkidle2', timeout: 30000 });
+  await sleep(2000);
+  
+  let status = await checkLogin();
+  if (status.loggedIn) {
+    console.log('[Renewal] ✓ Already logged in via persisted cookies!');
+    return page;
+  }
+  console.log(`[Renewal] Not logged in (hasCsrf=${status.hasCsrf}, hasUserEl=${status.hasUserEl})`);
+  
+  // --- Layer 2: Try COZE_COOKIES env var (seed for initial setup) ---
   const cozeCookies = process.env.COZE_COOKIES;
   if (cozeCookies) {
-    console.log('[Renewal] Cookie-based auth mode detected (COZE_COOKIES is set).');
-    console.log('[Renewal] Setting cookies and navigating to Coze.cn...');
+    console.log('[Renewal] Layer 2: Seeding cookies from COZE_COOKIES env var...');
     
-    // Parse and set cookies before navigation
     const cookiePairs = cozeCookies.split(';').map(c => c.trim()).filter(Boolean);
     const cookieObjects = cookiePairs.map(pair => {
       const [name, ...valueParts] = pair.split('=');
@@ -114,49 +151,38 @@ async function loginToCoze(browser) {
     });
     
     await page.setCookie(...cookieObjects);
-    console.log(`[Renewal] Set ${cookieObjects.length} cookies.`);
+    console.log(`[Renewal] Set ${cookieObjects.length} seed cookies.`);
     
-    // Navigate to Coze.cn
+    // Re-navigate to let server set httpOnly session cookies
     await page.goto('https://www.coze.cn/', { waitUntil: 'networkidle2', timeout: 30000 });
+    await sleep(2000);
     
-    // Check if login was successful
-    const isLoggedIn = await page.evaluate(() => {
-      return !!document.querySelector('[class*="user"]') || 
-             document.cookie.includes('passport_csrf_token');
-    });
-    
-    if (isLoggedIn) {
-      console.log('[Renewal] Cookie-based auth successful!');
+    status = await checkLogin();
+    if (status.loggedIn) {
+      console.log('[Renewal] ✓ Cookie seeding successful! httpOnly cookies now in userDataDir.');
       return page;
     }
-    
-    console.log('[Renewal] Cookie auth failed, falling through to password auth...');
-    // Fall through to password-based auth below
+    console.log('[Renewal] Cookie seeding did not result in login. Trying next layer...');
   }
   
-  // --- Password-based auth mode ---
+  // --- Layer 3: Password-based auth ---
   const email = process.env.COZE_EMAIL;
   const password = process.env.COZE_PASSWORD;
   
   if (!email || !password) {
     throw new Error(
-      'No valid auth method configured. Set either COZE_COOKIES (for SMS-login users) ' +
-      'or COZE_EMAIL + COZE_PASSWORD (for password-login users).'
+      'All auth methods exhausted. Persisted cookies expired, COZE_COOKIES invalid, ' +
+      'and no COZE_EMAIL/COZE_PASSWORD configured. ' +
+      'Re-login to Coze.cn and update COZE_COOKIES env var.'
     );
   }
   
-  console.log('[Renewal] Password-based auth mode.');
-  console.log('[Renewal] Navigating to Coze.cn...');
-  await page.goto('https://www.coze.cn/', { waitUntil: 'networkidle2', timeout: 30000 });
+  console.log('[Renewal] Layer 3: Password-based auth...');
   
-  // Check if already logged in
-  const isLoggedIn = await page.evaluate(() => {
-    return !!document.querySelector('[class*="user"]') || 
-           document.cookie.includes('passport_csrf_token');
-  });
-  
-  if (isLoggedIn) {
-    console.log('[Renewal] Already logged in, skipping login flow.');
+  // Check if already on a login page
+  status = await checkLogin();
+  if (status.loggedIn) {
+    console.log('[Renewal] Already logged in!');
     return page;
   }
   
@@ -180,9 +206,7 @@ async function loginToCoze(browser) {
       clicked = true;
       console.log(`[Renewal] Clicked login: ${selector}`);
       break;
-    } catch (e) {
-      // continue to next selector
-    }
+    } catch (e) {}
   }
   
   if (!clicked) {
@@ -193,34 +217,21 @@ async function loginToCoze(browser) {
     await sleep(2000);
   }
   
-  const currentUrl = page.url();
-  console.log(`[Renewal] Current URL after login click: ${currentUrl}`);
+  console.log(`[Renewal] Current URL: ${page.url()}`);
   
   const phoneSelectors = [
-    'input[type="text"]',
-    'input[type="email"]',
-    'input[type="tel"]',
-    'input[name="email"]',
-    'input[name="phone"]',
-    'input[name="username"]',
-    'input[name="account"]',
-    'input[placeholder*="手机"]',
-    'input[placeholder*="邮箱"]',
-    'input[placeholder*="phone"]',
-    'input[placeholder*="email"]',
+    'input[type="text"]', 'input[type="email"]', 'input[type="tel"]',
+    'input[name="email"]', 'input[name="phone"]', 'input[name="username"]',
+    'input[name="account"]', 'input[placeholder*="手机"]', 'input[placeholder*="邮箱"]',
+    'input[placeholder*="phone"]', 'input[placeholder*="email"]',
   ];
   
   let phoneInput = null;
   for (const selector of phoneSelectors) {
     try {
       phoneInput = await page.$(selector);
-      if (phoneInput) {
-        console.log(`[Renewal] Found input: ${selector}`);
-        break;
-      }
-    } catch (e) {
-      // continue
-    }
+      if (phoneInput) { console.log(`[Renewal] Found input: ${selector}`); break; }
+    } catch (e) {}
   }
   
   if (phoneInput) {
@@ -230,41 +241,27 @@ async function loginToCoze(browser) {
     await sleep(1000);
     
     const nextSelectors = [
-      'button:has-text("下一步")',
-      'button:has-text("继续")',
-      'button:has-text("Next")',
-      'button:has-text("Continue")',
-      'button[type="submit"]',
-      'input[type="submit"]',
+      'button:has-text("下一步")', 'button:has-text("继续")',
+      'button:has-text("Next")', 'button:has-text("Continue")',
+      'button[type="submit"]', 'input[type="submit"]',
     ];
-    
     for (const selector of nextSelectors) {
       try {
         const btn = await page.$(selector);
-        if (btn) {
-          await btn.click();
-          console.log(`[Renewal] Clicked next: ${selector}`);
-          break;
-        }
+        if (btn) { await btn.click(); console.log(`[Renewal] Clicked next: ${selector}`); break; }
       } catch (e) {}
     }
     await sleep(2000);
     
     const passSelectors = [
-      'input[type="password"]',
-      'input[name="password"]',
-      'input[placeholder*="密码"]',
-      'input[placeholder*="password"]',
+      'input[type="password"]', 'input[name="password"]',
+      'input[placeholder*="密码"]', 'input[placeholder*="password"]',
     ];
-    
     let passInput = null;
     for (const selector of passSelectors) {
       try {
         passInput = await page.$(selector);
-        if (passInput) {
-          console.log(`[Renewal] Found password input: ${selector}`);
-          break;
-        }
+        if (passInput) { console.log(`[Renewal] Found password: ${selector}`); break; }
       } catch (e) {}
     }
     
@@ -275,24 +272,15 @@ async function loginToCoze(browser) {
       await sleep(500);
       
       const submitSelectors = [
-        'button:has-text("登录")',
-        'button:has-text("登 录")',
-        'button:has-text("Sign in")',
-        'button[type="submit"]',
-        'input[type="submit"]',
+        'button:has-text("登录")', 'button:has-text("登 录")',
+        'button:has-text("Sign in")', 'button[type="submit"]', 'input[type="submit"]',
       ];
-      
       for (const selector of submitSelectors) {
         try {
           const btn = await page.$(selector);
-          if (btn) {
-            await btn.click();
-            console.log(`[Renewal] Clicked submit: ${selector}`);
-            break;
-          }
+          if (btn) { await btn.click(); console.log(`[Renewal] Clicked submit: ${selector}`); break; }
         } catch (e) {}
       }
-      
       await sleep(5000);
       await page.screenshot({ path: '/tmp/coze-after-login.png' });
     }
@@ -300,11 +288,16 @@ async function loginToCoze(browser) {
   
   try {
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
-  } catch (e) {
-    // Navigation might have already completed
+  } catch (e) {}
+  
+  // Final check
+  const finalStatus = await checkLogin();
+  console.log(`[Renewal] Login flow complete. Logged in: ${finalStatus.loggedIn}`);
+  
+  if (!finalStatus.loggedIn) {
+    throw new Error('All login methods failed. Please update COZE_COOKIES with fresh cookies.');
   }
   
-  console.log(`[Renewal] Login flow complete. Current URL: ${page.url()}`);
   return page;
 }
 
@@ -460,6 +453,17 @@ async function renewToken() {
   
   let browser;
   try {
+    // Persist Chrome profile for cookie survival across runs
+    const PROFILE_DIR = '/data/chrome-profile';
+    try {
+      if (!fs.existsSync(PROFILE_DIR)) {
+        fs.mkdirSync(PROFILE_DIR, { recursive: true });
+        console.log(`[Renewal] Created profile dir: ${PROFILE_DIR}`);
+      }
+    } catch (e) {
+      console.warn(`[Renewal] Cannot create ${PROFILE_DIR}, using temp dir. Cookies WON'T persist!`, e.message);
+    }
+    
     // Launch Puppeteer
     const launchOptions = {
       headless: 'new',
@@ -469,7 +473,8 @@ async function renewToken() {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--single-process',
-      ]
+      ],
+      userDataDir: PROFILE_DIR
     };
     
     // On Railway/Nixpacks, chromium is at /usr/bin/chromium
@@ -479,7 +484,7 @@ async function renewToken() {
       launchOptions.executablePath = '/usr/bin/chromium-browser';
     }
     
-    console.log('[Renewal] Launching browser...');
+    console.log('[Renewal] Launching browser (userDataDir: ' + PROFILE_DIR + ')...');
     browser = await puppeteer.launch(launchOptions);
     
     // Login to Coze
